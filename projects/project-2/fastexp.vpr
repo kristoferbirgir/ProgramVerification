@@ -91,11 +91,14 @@ method fast_pow(n: Int, e: Int)
     // When y=0: res * b^0 = res * 1 = res, so res = n^e ✓
     
     while (y > 0)
+        // Loop invariant: y remains non-negative (needed for math_pow precondition)
+        invariant 0 <= y
+        
+        // Loop invariant: e stays positive (needed for iterations function)
+        invariant e > 0
+        
         // Loop invariant: The product res * b^y always equals n^e
         invariant res * math_pow(b, y) == math_pow(n, e)
-        
-        // Loop invariant: y remains non-negative
-        invariant 0 <= y
         
         // Time credits: We need exactly iterations(y) credits for remaining iterations
         // Each iteration consumes 1 credit and decreases y by division by 2
@@ -104,27 +107,29 @@ method fast_pow(n: Int, e: Int)
         consume_time_credit() // we must spend a credit for every loop iteration
 
         if (y % 2 == 1) {
-            // y is odd: multiply result by b before squaring
-            // This maintains the invariant because:
-            // res' * b'^y' = (res * b) * (b²)^((y-1)/2)
-            //             = res * b * b^(y-1)  [by lemma_pow since y-1 is even]
-            //             = res * b^y ✓
+            // y is odd: multiply result by b first
             res := res * b
-        } else {
-            // y is even: we can use lemma_pow directly
-            // lemma_pow tells us: b^y == (b²)^(y/2)
-            // So: res * b^y == res * (b²)^(y/2) ✓
-            lemma_pow(b, y)
         }
-
+        
+        // Update y and b together
+        // For even y: lemma_pow proves math_pow(b, y) == math_pow(b*b, y/2)
+        // For odd y: after res *= b, we have res * b^(y-1) == n^e
+        //            and y-1 is even, so lemma_pow applies to (y-1)
+        var old_y: Int := y
+        var old_b: Int := b
+        
         y := y / 2
         b := b * b
         
-        // After the update:
-        // - If y was odd: res' * (b²)^(y/2) = (res*b_old) * (b_old²)^((y_old-1)/2)
-        //                                    = res_old * b_old^y_old ✓
-        // - If y was even: res' * (b²)^(y/2) = res_old * (b_old²)^(y_old/2)
-        //                                     = res_old * b_old^y_old ✓ [by lemma_pow]
+        // Help Viper prove the invariant by calling lemma_pow appropriately
+        if (old_y % 2 == 0) {
+            // If old_y was even, lemma_pow directly applies
+            lemma_pow(old_b, old_y)
+        } else {
+            // If old_y was odd, we already multiplied res by old_b
+            // Now old_y - 1 is even, and we need lemma for that
+            lemma_pow(old_b, old_y - 1)
+        }
     }
     
     // After the loop: y == 0, so:

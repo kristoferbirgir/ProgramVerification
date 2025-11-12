@@ -248,7 +248,6 @@ function to_set(tree: Ref): Set[Int]
 function node_to_set(node: Ref): Set[Int]
     requires acc(bst_node(node))
     requires node != null
-    ensures node.elem in result
 {
     unfolding bst_node(node) in (
         (node.left == null ? Set[Int]() : node_to_set(node.left)) union

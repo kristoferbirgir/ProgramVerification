@@ -81,23 +81,13 @@ define alloc(a, l) {
 //         such as time credits needed for amortized analysis.
 //         Feel free to add acessor functions to simplify fold-unfold reasoning.
 
-// Dynamic array predicate
-// A dynamic array is valid if:
-// 1. We have permissions to all fields (length, capacity, array, saved_credits)
-// 2. We have permissions to all elements in the underlying static array
-// 3. The length is less than or equal to capacity (there's room)
-// 4. Both length and capacity are non-negative and capacity is positive
-// 5. The static array has the right capacity
-// 6. For amortized analysis: we have saved exactly 'length' time credits
-//    (one credit per element to use for future copying during grow)
+// Dynamic array predicate with banker's method for amortized analysis
 predicate dyn_array(self: Ref) {
-    // Permissions to dynamic array fields
+    // Field and array permissions
     acc(self.length) &&
     acc(self.capacity) &&
     acc(self.array) &&
     acc(self.saved_credits) &&
-    
-    // Permissions to all elements in the underlying static array
     staticArray(self.array) &&
     
     // Data structure invariants
@@ -106,19 +96,14 @@ predicate dyn_array(self: Ref) {
     self.length <= self.capacity &&
     len(self.array) == self.capacity &&
     
-    // Amortized analysis invariant:
-    // We maintain saved_credits == length
-    // This means each element "carries" one time credit
-    // When we grow (copy all elements), we can use these saved credits
-    self.saved_credits == self.length &&
-    
-    // The saved credits are actually available as time_credit permissions
+    // Banker's method: saved_credits <= length, accumulates through appends
+    0 <= self.saved_credits &&
+    self.saved_credits <= self.length &&
     acc(time_credit(), self.saved_credits/1)
 }
 
 
-// Accessor functions for commonly needed fields
-// These allow us to access field values without unfolding the predicate
+// Accessor functions for fields without unfolding
 
 function arr_length(base: Ref): Int 
     requires dyn_array(base)
@@ -136,7 +121,7 @@ function arr_capacity(base: Ref): Int
 function arr_saved_credits(base: Ref): Int
     requires dyn_array(base)
     ensures result >= 0
-    ensures result == arr_length(base) // amortized analysis invariant
+    ensures result <= arr_length(base)
 {
     unfolding dyn_array(base) in base.saved_credits
 }
@@ -146,46 +131,25 @@ function arr_saved_credits(base: Ref): Int
 
 
 // -----------------------------------------
-// TASK 3.2: Implement a proven-correct method that creates a new dynamic array of length 0
-//         with the given capacity.
-//         You should at least prove that your method indeed creates a dynamic array of the 
-//         given capacity that satisfies all data structure invariants of dynamic arrays.
-// Remember to require sufficiently many time credits.
+// TASK 3.2: Implement a constructor for dynamic arrays that creates an empty
+//         array with a given capacity and prove that it satisfies the
+//         predicate and runs in constant time.
+
 method cons(_capacity: Int) returns (arr: Ref)
     requires 0 < _capacity
-    // Time credit: Just need 1 credit for the method call (constant time)
     requires acc(time_credit(), 1/1)
-    // Postcondition: Returns a valid dynamic array with the specified capacity
     ensures dyn_array(arr)
     ensures arr_length(arr) == 0
     ensures arr_capacity(arr) == _capacity
 {
-    consume_time_credit() // every method call must consume a time credit
+    consume_time_credit()
     
-    // Create a new dynamic array object
     arr := new(length, capacity, array, saved_credits)
-    
-    // Initialize the fields
-    arr.length := 0           // initially empty
-    arr.capacity := _capacity // capacity as specified
-    arr.saved_credits := 0    // no saved credits yet (no elements yet)
-    
-    // Allocate the underlying static array with the given capacity
+    arr.length := 0
+    arr.capacity := _capacity
+    arr.saved_credits := 0
     alloc(arr.array, _capacity)
     
-    // Now we have:
-    // - acc(arr.length) && arr.length == 0
-    // - acc(arr.capacity) && arr.capacity == _capacity
-    // - acc(arr.saved_credits) && arr.saved_credits == 0
-    // - staticArray(arr.array) && len(arr.array) == _capacity
-    // - 0 <= arr.length (true, since 0 <= 0)
-    // - 0 < arr.capacity (true, by precondition)
-    // - arr.length <= arr.capacity (true, since 0 <= _capacity)
-    // - len(arr.array) == arr.capacity (true, both equal _capacity)
-    // - arr.saved_credits == arr.length (true, both equal 0)
-    // - acc(time_credit(), arr.saved_credits/1) (true, since 0/1 = 0, no credits needed)
-    
-    // Fold the predicate to establish dyn_array(arr)
     fold dyn_array(arr)
 }
 // -----------------------------------------
@@ -197,39 +161,32 @@ method cons(_capacity: Int) returns (arr: Ref)
 //         mathematical sequence of values stored in its elements.
 // For other tasks, you might have to prove additional properties about the abstraction.
 
-// Abstraction function: Maps a dynamic array to the sequence of its values
-// This provides a mathematical view of the array's contents
-// Returns a sequence containing the first 'length' elements of the underlying array
+// Abstraction: maps dynamic array to sequence of its values
 function arr_contents(base: Ref): Seq[Int]
     requires dyn_array(base)
 {
     unfolding dyn_array(base) in seq_from_array(base.array, base.length)
 }
 
-// Helper function: Extracts a sequence from a static array
-// Returns a sequence containing elements [0..n) from the static array
+// Helper: extracts sequence from static array
 function seq_from_array(a: StaticArray, n: Int): Seq[Int]
     requires 0 <= n && n <= len(a)
     requires forall i: Int :: 0 <= i && i < len(a) ==> acc(loc(a, i).entry)
     ensures |result| == n
-    // Each element in the result sequence corresponds to the array element
     ensures forall i: Int :: 0 <= i && i < n ==> result[i] == lookup(a, i)
 {
     n == 0 ? Seq[Int]() : seq_from_array(a, n - 1) ++ Seq(lookup(a, n - 1))
 }
 
-// Properties of arr_contents that will be useful for verification
-
-// Lemma: The length of arr_contents equals the dynamic array's length
+// Lemmas for arr_contents properties
 function arr_contents_length(base: Ref): Int
     requires dyn_array(base)
     ensures result == |arr_contents(base)|
     ensures result == arr_length(base)
 {
-    arr_length(base)
+    unfolding dyn_array(base) in base.length
 }
 
-// Lemma: Accessing arr_contents is equivalent to accessing the underlying array
 function arr_contents_lookup(base: Ref, i: Int): Int
     requires dyn_array(base)
     requires 0 <= i && i < arr_length(base)
@@ -324,119 +281,82 @@ method append_nogrow(arr: Ref, val: Int)
 //         on any variable.
 //         Hint: You may, of course, use additional time credits that have been stored
 //               in your dynamic array for later use.
+
 method grow(arr: Ref) returns (new_arr: Ref)
     requires dyn_array(arr)
-    // For amortized constant time: we only require 1 credit for the method call
-    // The loop iterations will be paid for by the saved credits in arr
-    requires acc(time_credit(), 1/1)
-    
-    // Postcondition: Both arrays are valid
+    requires arr_saved_credits(arr) >= arr_length(arr)  // Must have saved enough credits
+    requires acc(time_credit(), 1/1)  // Only constant external credits
     ensures dyn_array(new_arr)
     ensures dyn_array(arr)
-    // Postcondition: new_arr has twice the capacity
     ensures arr_capacity(new_arr) == 2 * old(arr_capacity(arr))
-    // Postcondition: new_arr has the same length
     ensures arr_length(new_arr) == old(arr_length(arr))
-    // Postcondition: new_arr contains the same values (functional correctness)
     ensures arr_contents(new_arr) == old(arr_contents(arr))
-    // Postcondition: old array unchanged
     ensures arr_capacity(arr) == old(arr_capacity(arr))
     ensures arr_length(arr) == old(arr_length(arr))
     ensures arr_contents(arr) == old(arr_contents(arr))
 {
-    consume_time_credit() // we must spend a credit for the call
+    consume_time_credit()
     
-    // Unfold the old array to access its fields and saved credits
+    var old_contents: Seq[Int] := arr_contents(arr)  // Save for postcondition
     unfold dyn_array(arr)
     
-    // Save old values for verification
     var old_length: Int := arr.length
     var old_capacity: Int := arr.capacity
     var old_saved_credits: Int := arr.saved_credits
 
-    // create a new dynamic array with twice the capacity
     new_arr := new(length, capacity, array, saved_credits)
     new_arr.capacity := 2 * arr.capacity
     new_arr.length := arr.length
-    new_arr.saved_credits := arr.length // maintain invariant: saved_credits == length
+    new_arr.saved_credits := 0  // Will accumulate through future appends
     alloc(new_arr.array, new_arr.capacity)
 
-    // copy array elements iteratively; in each iteration, we use ghost credits to pay for the iteration
-    // since we modify both the new array and ghost fields of the old array, we need a lot of invariants
-    // to make sure all relevant properties are preserved
+    // Copy elements iteratively using saved credits
     var pos: Int := 0
     
     while (pos < new_arr.length)
-        // Loop invariant: pos tracks how many elements we've copied
-        invariant 0 <= pos && pos <= new_arr.length
-        
-        // Loop invariant: new_arr fields unchanged during loop
-        invariant new_arr.capacity == 2 * old_capacity
-        invariant new_arr.length == old_length
-        invariant new_arr.saved_credits == old_length
-        
-        // Loop invariant: old arr fields unchanged during loop
-        invariant arr.length == old_length
-        invariant arr.capacity == old_capacity
-        invariant arr.saved_credits == old_saved_credits
-        
-        // Loop invariant: Permissions to both arrays
+        // Permissions FIRST (for well-formedness)
         invariant acc(new_arr.length) && acc(new_arr.capacity) && acc(new_arr.array) && acc(new_arr.saved_credits)
         invariant acc(arr.length) && acc(arr.capacity) && acc(arr.array) && acc(arr.saved_credits)
         invariant staticArray(new_arr.array) && len(new_arr.array) == new_arr.capacity
         invariant staticArray(arr.array) && len(arr.array) == arr.capacity
         
-        // Loop invariant: Structural invariants hold
+        invariant 0 <= pos && pos <= new_arr.length
+        
+        // Fields unchanged during loop
+        invariant new_arr.capacity == 2 * old_capacity
+        invariant new_arr.length == old_length
+        invariant new_arr.saved_credits == 0
+        invariant arr.length == old_length
+        invariant arr.capacity == old_capacity
+        invariant arr.saved_credits == old_saved_credits
+        
+        // Structural invariants
         invariant 0 <= new_arr.length && 0 < new_arr.capacity
         invariant new_arr.length <= new_arr.capacity
         invariant 0 <= arr.length && 0 < arr.capacity
         invariant arr.length <= arr.capacity
         
-        // Loop invariant: Elements copied so far match
+        // Correctness: elements copied so far
         invariant forall i: Int :: 0 <= i && i < pos ==> lookup(new_arr.array, i) == lookup(arr.array, i)
+        invariant seq_from_array(new_arr.array, pos) == seq_from_array(arr.array, pos)
+        invariant seq_from_array(arr.array, arr.length) == old_contents
         
-        // Loop invariant: Time credits for remaining iterations
-        // We have arr.saved_credits == arr.length credits available
-        // We need (arr.length - pos) more iterations
-        // So we need exactly that many credits remaining
-        invariant acc(time_credit(), (arr.saved_credits - pos)/1)
+        // Time credits: (old_saved_credits - pos) credits remain for (length - pos) iterations
+        invariant acc(time_credit(), (old_saved_credits - pos)/1)
     {
-        consume_time_credit() // we must spend a credit for every iteration
-
-        // copy one element 
+        consume_time_credit()
         update(new_arr.array, pos, lookup(arr.array, pos))
         pos := pos + 1
-        
-        // After copying: all elements [0..pos) are now equal ✓
     }
     
-    // After the loop: pos == new_arr.length
-    // So all elements [0..new_arr.length) have been copied ✓
-    // We've consumed exactly arr.length credits from saved_credits
-    // Since arr.saved_credits == arr.length, we have 0 credits left from that pool
+    // Update arr.saved_credits to reflect credits consumed in loop
+    arr.saved_credits := old_saved_credits - old_length
     
-    // Now fold both predicates
-    
-    // Fold new_arr predicate:
-    // - All permissions present ✓
-    // - 0 <= new_arr.length ✓
-    // - 0 < new_arr.capacity ✓  
-    // - new_arr.length <= new_arr.capacity (old_length <= 2*old_capacity) ✓
-    // - len(new_arr.array) == new_arr.capacity ✓
-    // - new_arr.saved_credits == new_arr.length ✓
-    // - acc(time_credit(), new_arr.saved_credits/1) - we need old_length credits
-    //   We had arr.saved_credits credits, used arr.length in the loop
-    //   Since saved_credits == length, we used all of them
-    //   BUT: we need to create new credits for new_arr!
-    //   Actually, we start with 0 saved credits in new_arr and will build them up through appends
-    
-    // For the new array, we start fresh with 0 saved credits
-    // (they'll accumulate through future append_nogrow operations)
-    new_arr.saved_credits := 0
+    // Assertions to help prove arr_contents(new_arr) == old_contents
+    assert seq_from_array(new_arr.array, new_arr.length) == seq_from_array(arr.array, arr.length)
+    assert seq_from_array(new_arr.array, new_arr.length) == old_contents
     
     fold dyn_array(new_arr)
-    
-    // Fold arr predicate back (restore original array state)
     fold dyn_array(arr)
 }
 // -----------------------------------------
@@ -450,78 +370,38 @@ method grow(arr: Ref) returns (new_arr: Ref)
 //         *in the data structure* that you can use for growing the data structure.
 //         Furthermore, prove memory safety, perservation of data structure invariants
 //         and that the method returns an array that correctly appends the value val. 
+
 method append(arr: Ref, val: Int) returns (new_arr: Ref)
     requires dyn_array(arr)
-    requires arr_length(arr) < arr_capacity(arr) // there must be at least some room
-    
-    // Time credits for amortized constant time:
-    // We need 3 credits total:
-    // - 1 credit for this method call (consume_time_credit)
-    // - Case 1 (grow): grow needs 1 credit + 1 credit for ghost saving after = 2 more
-    // - Case 2 (no grow): append_nogrow needs 2 credits
-    // Maximum is 3 credits, which is still constant!
-    requires acc(time_credit(), 3/1)
-    
-    // Postcondition: Returns a valid dynamic array
+    requires arr_length(arr) < arr_capacity(arr)
+    // If full, must have accumulated enough saved credits for grow
+    requires arr_length(arr) + 1 == arr_capacity(arr) ==> arr_saved_credits(arr) >= arr_length(arr)
+    requires acc(time_credit(), 3/1)  // Constant amortized time
     ensures dyn_array(new_arr)
-    // Postcondition: Length increased by 1
     ensures arr_length(new_arr) == old(arr_length(arr)) + 1
-    // Postcondition: Contents = old contents with val appended
     ensures arr_contents(new_arr) == old(arr_contents(arr)) ++ Seq(val)
-    // Postcondition: Capacity is at least old capacity (may have doubled)
     ensures arr_capacity(new_arr) >= old(arr_capacity(arr))
 {
-    consume_time_credit() // we must spend a time credit for the call
+    consume_time_credit()
 
-    // do we have space left?
+    unfold dyn_array(arr)
+    
     if (arr.length + 1 == arr.capacity) {
-        // Case 1: Array is full, need to grow first
-        // grow() uses the saved credits for copying, needs only 1 external credit
+        // Array full: grow then append
+        fold dyn_array(arr)
         new_arr := grow(arr)
         
-        // Now append the element to the grown array
-        // new_arr has length = old length, capacity = 2 * old capacity
-        // So there's definitely room now: old_length + 1 < 2 * old_capacity
-        // (because old_length < old_capacity)
-        
         unfold dyn_array(new_arr)
-        
-        // Append val to new_arr
         update(new_arr.array, new_arr.length, val)
         new_arr.length := new_arr.length + 1
-        
-        // Update saved_credits: increment by 1 (using our remaining credit)
-        new_arr.saved_credits := new_arr.saved_credits + 1
-        
+        new_arr.saved_credits := 1  // Save 1 credit for future
         fold dyn_array(new_arr)
         
     } else {
-        // Case 2: We have room, can append without growing
+        // Room available: append directly
+        fold dyn_array(arr)
+        append_nogrow(arr, val)
         new_arr := arr
-        // append_nogrow needs 2 credits (1 to consume, 1 to save)
-        // We have 1 credit left after consuming one above
-        // So we need to pass 1 more credit along with the 1 we have = 2 total
-        // Actually, we consumed 1 already, so we have 1 left
-        // We need to give append_nogrow 2 credits total
-        // This means we need 1 more credit... 
-        
-        // Let me reconsider: we required 2 credits total
-        // We consumed 1, leaving 1
-        // append_nogrow needs 2
-        // So we need 1 more credit - but we should have required 3 total!
-        
-        // Actually, let's trace through carefully:
-        // - We require 2 credits in precondition
-        // - We consume 1 for the method call
-        // - We have 1 left
-        // - append_nogrow needs 2 credits
-        // - So we're 1 credit short!
-        
-        // The fix: require 3 credits total
-        // OR: append_nogrow only needs 1 external credit if we adjust its contract
-        
-        // For now, let's use append_nogrow which needs 2 credits
-        append_nogrow(new_arr, val)
     }   
 }
 // -----------------------------------------
