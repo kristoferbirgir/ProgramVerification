@@ -75,7 +75,7 @@ function tree_max(node: Ref): Int
 // The empty tree is represented by self.root == null
 predicate bst(self: Ref) {
     acc(self.root) &&
-    (self.root == null || bst_node(self.root))
+    (self.root != null ==> acc(bst_node(self.root)))
 }
 
 // A single BST node. Apart from field permissions, the current value
@@ -88,10 +88,10 @@ predicate bst_node(self: Ref) {
     acc(self.right) &&
     
     // Left subtree is either null or a valid BST
-    (self.left == null || bst_node(self.left)) &&
+    (self.left != null ==> acc(bst_node(self.left))) &&
     
     // Right subtree is either null or a valid BST
-    (self.right == null || bst_node(self.right)) &&
+    (self.right != null ==> acc(bst_node(self.right))) &&
     
     // BST ordering property:
     // All values in left subtree < current value < all values in right subtree
@@ -105,22 +105,156 @@ predicate bst_node(self: Ref) {
 // TASK 4.2 - 4.4: implement and verify this method
 method bst_insert(tree: Ref, val: Int)
     requires bst(tree)
-    // TODO
+    
+    // TASK 4.3: Time credits = h + c where h is height
+    // We need height(tree) + 1 credits:
+    // - 1 for the method call
+    // - height(tree) for the recursive traversal (worst case: root to leaf)
+    requires acc(time_credit(), (height(tree) + 1)/1)
+    
+    // TASK 4.2: Postcondition - BST property preserved
+    ensures bst(tree)
+    
+    // TASK 4.3: Height may increase by at most 1
+    ensures height(tree) <= old(height(tree)) + 1
+    
+    // TASK 4.4: Functional correctness - val is added to the set
+    // If val was already present, set unchanged; otherwise val added
+    ensures to_set(tree) == old(to_set(tree)) union Set(val)
+{
+    consume_time_credit()
+    
+    unfold bst(tree)
+    
+    if (tree.root == null) {
+        // Empty tree: create a new root node
+        tree.root := new(elem, left, right)
+        tree.root.elem := val
+        tree.root.left := null
+        tree.root.right := null
+        fold bst_node(tree.root)
+    } else {
+        // Non-empty tree: insert into the root node
+        node_insert(tree.root, val)
+    }
+    
+    fold bst(tree)
+}
+
+// Helper method: insert into a node (recursive)
+method node_insert(node: Ref, val: Int)
+    requires acc(bst_node(node))
+    requires node != null
+    
+    // Time credits: need node_height(node) credits for traversal
+    requires acc(time_credit(), node_height(node)/1)
+    
+    // Postcondition: BST property preserved
+    ensures acc(bst_node(node))
+    
+    // Height may increase by at most 1
+    ensures node_height(node) <= old(node_height(node)) + 1
+    
+    // Functional correctness
+    ensures node_to_set(node) == old(node_to_set(node)) union Set(val)
+    
+    // Min/max properties preserved (needed for BST invariant)
+    ensures val < old(tree_min(node)) ==> tree_min(node) == val
+    ensures val >= old(tree_min(node)) ==> tree_min(node) == old(tree_min(node))
+    ensures val > old(tree_max(node)) ==> tree_max(node) == val
+    ensures val <= old(tree_max(node)) ==> tree_max(node) == old(tree_max(node))
+{
+    consume_time_credit()
+    
+    unfold bst_node(node)
+    
+    if (val < node.elem) {
+        // Insert into left subtree
+        if (node.left == null) {
+            // Create new left child
+            node.left := new(elem, left, right)
+            node.left.elem := val
+            node.left.left := null
+            node.left.right := null
+            fold bst_node(node.left)
+        } else {
+            // Recursively insert into left subtree
+            node_insert(node.left, val)
+        }
+    } elseif (val > node.elem) {
+        // Insert into right subtree
+        if (node.right == null) {
+            // Create new right child
+            node.right := new(elem, left, right)
+            node.right.elem := val
+            node.right.left := null
+            node.right.right := null
+            fold bst_node(node.right)
+        } else {
+            // Recursively insert into right subtree
+            node_insert(node.right, val)
+        }
+    } else {
+        // val == node.elem: value already exists, do nothing
+        // This maintains the "no duplicates" property of BST
+    }
+    
+    fold bst_node(node)
+}
 // -----------------------------------------
 
 
 
 // -----------------------------------------
 // Auxiliary definition of the height of a tree
+// Height is the length of the longest path from root to a leaf
+// Empty tree (null root) has height 0
 function height(tree: Ref) : Int
     requires bst(tree)
-    // TODO: define for TASK 4.3
+    ensures result >= 0
+{
+    unfolding bst(tree) in (
+        tree.root == null ? 0 : node_height(tree.root)
+    )
+}
+
+// Helper: height of a node (for recursive definition)
+function node_height(node: Ref): Int
+    requires acc(bst_node(node))
+    requires node != null
+    ensures result >= 1
+{
+    unfolding bst_node(node) in (
+        1 + max(
+            node.left == null ? 0 : node_height(node.left),
+            node.right == null ? 0 : node_height(node.right)
+        )
+    )
+}
 // -----------------------------------------
 
 // -----------------------------------------
 // Auxiliary function mapping every BST
 // to the set of values it stores.
 function to_set(tree: Ref): Set[Int]
-    // TODO: define for TASK 4.4
+    requires bst(tree)
+{
+    unfolding bst(tree) in (
+        tree.root == null ? Set[Int]() : node_to_set(tree.root)
+    )
+}
+
+// Helper: set of values in a node's subtree
+function node_to_set(node: Ref): Set[Int]
+    requires acc(bst_node(node))
+    requires node != null
+    ensures node.elem in result
+{
+    unfolding bst_node(node) in (
+        (node.left == null ? Set[Int]() : node_to_set(node.left)) union
+        Set(node.elem) union
+        (node.right == null ? Set[Int]() : node_to_set(node.right))
+    )
+}
 // -----------------------------------------
 

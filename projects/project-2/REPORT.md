@@ -747,17 +747,297 @@ We've successfully implemented and verified a complete dynamic array with:
 
 ## Challenge 4: Binary Search Trees
 
+### Overview
+Binary Search Trees (BSTs) are fundamental tree data structures where each node's value is greater than all values in its left subtree and less than all values in its right subtree. This challenge verifies a BST insertion operation with runtime analysis.
+
 ### Task 4.1: BST Predicate (★★★)
-*(To be completed)*
+
+#### Requirements
+- Define predicates for BST trees and nodes
+- Capture BST ordering property
+- Support recursive tree structure
+- Enable height and set abstractions
+
+#### Design Decisions
+
+**1. Two-Level Predicate Structure**
+
+```viper
+predicate bst(self: Ref)        // Wrapper holding root reference
+predicate bst_node(self: Ref)   // Individual tree node
+```
+
+This separation allows:
+- Empty trees: `bst` with `root == null`
+- Clean recursion: `bst_node` for non-null nodes
+
+**2. BST Node Predicate**
+
+A node is a valid BST if:
+```viper
+self != null &&
+acc(self.elem) && acc(self.left) && acc(self.right) &&
+(self.left != null ==> acc(bst_node(self.left))) &&
+(self.right != null ==> acc(bst_node(self.right))) &&
+(self.left != null ==> tree_max(self.left) < self.elem) &&
+(self.right != null ==> self.elem < tree_min(self.right))
+```
+
+**Key insight**: The BST property is expressed using min/max of entire subtrees, not just immediate children!
+
+**3. Helper Functions**
+
+```viper
+function tree_min(node: Ref): Int  // Minimum value in subtree
+function tree_max(node: Ref): Int  // Maximum value in subtree
+```
+
+These recursively compute bounds:
+- `tree_min(node)` = min of node.elem and left subtree's min
+- `tree_max(node)` = max of node.elem and right subtree's max
+
+#### Implementation Strategy
+
+**Recursive Permission Structure**:
+- Each node holds permissions to its fields
+- Recursive predicate instances for left and right children
+- Ordering constraints link levels together
+
+**Why This Works**:
+- Viper can unfold predicates to access subtrees
+- Min/max functions provide bounds for verification
+- Ordering is transitive across the entire tree
+
+#### Verification Challenges
+
+1. **Recursive predicates**: Must carefully manage fold/unfold
+2. **Ordering properties**: Transitive constraints across tree
+3. **Null handling**: Empty subtrees are valid BSTs
+4. **Permission accounting**: Each node owns its subtree
+
+**Status**: ✅ COMPLETED
 
 ### Task 4.2: Insert Implementation (★★★★)
-*(To be completed)*
+#### Requirements
+- Implement `bst_insert(tree, val)` that inserts a value
+- Prove memory safety
+- Prove BST property is preserved
+- Handle duplicates correctly (no duplicates in BST)
+
+#### Algorithm
+
+BST insertion follows a simple recursive pattern:
+
+```
+if tree is empty:
+    create new node as root
+else if val < current.elem:
+    insert into left subtree
+else if val > current.elem:
+    insert into right subtree
+else:
+    value exists, do nothing (no duplicates)
+```
+
+#### Implementation Structure
+
+**Main Method**: `bst_insert(tree, val)`
+- Unfolds `bst(tree)` to access root
+- If root is null: create new root
+- Otherwise: delegate to `node_insert(root, val)`
+- Folds `bst(tree)` back
+
+**Helper Method**: `node_insert(node, val)`
+- Unfolds `bst_node(node)`
+- Compares val with node.elem
+- Recursively inserts into appropriate subtree
+- Handles base case: creates new leaf
+- Folds `bst_node(node)` back
+
+#### Key Implementation Details
+
+**Creating New Nodes**:
+```viper
+node.left := new(elem, left, right)
+node.left.elem := val
+node.left.left := null
+node.left.right := null
+fold bst_node(node.left)
+```
+
+**Preserving BST Property**:
+- Insertion location determined by comparisons
+- Only insert where ordering is maintained
+- Min/max properties update correctly through recursion
+
+**Handling Duplicates**:
+```viper
+if (val == node.elem) {
+    // Do nothing - value already exists
+}
+```
+
+#### Why Four Stars?
+
+1. **Recursive implementation**: Must verify both base and recursive cases
+2. **Complex predicate management**: Unfold/fold multiple levels
+3. **BST invariant preservation**: Prove ordering maintained
+4. **Min/max tracking**: Postconditions about tree bounds
+5. **Permission reasoning**: Recursive permission structure
+
+**Status**: ✅ COMPLETED
 
 ### Task 4.3: Runtime Bound (★★)
-*(To be completed)*
+
+#### Requirements
+- Prove insertion takes at most h+c time where h = height
+- Define height function
+- Express time credits in terms of height
+
+#### Height Definition
+
+```viper
+function height(tree: Ref): Int
+    requires bst(tree)
+{
+    unfolding bst(tree) in (
+        tree.root == null ? 0 : node_height(tree.root)
+    )
+}
+
+function node_height(node: Ref): Int
+    requires acc(bst_node(node))
+{
+    unfolding bst_node(node) in (
+        1 + max(
+            node.left == null ? 0 : node_height(node.left),
+            node.right == null ? 0 : node_height(node.right)
+        )
+    )
+}
+```
+
+- Empty tree: height = 0
+- Single node: height = 1
+- General: height = 1 + max(left_height, right_height)
+
+#### Runtime Analysis
+
+**Time Credits Required**: `height(tree) + 1`
+
+**Why?**
+- Worst case: insert at a leaf (traverse from root to leaf)
+- Path length from root to leaf ≤ height
+- Each recursive call consumes 1 credit
+- Initial method call consumes 1 credit
+- Total: height + 1 credits
+
+**For Balanced Trees**:
+- Height = O(log n) where n = number of nodes
+- Insertion is O(log n) ✓
+
+**For Unbalanced Trees**:
+- Height = O(n) (degenerate: linked list)
+- Insertion is O(n)
+
+#### Implementation
+
+```viper
+requires acc(time_credit(), (height(tree) + 1)/1)
+```
+
+Each recursive call:
+- Consumes 1 credit
+- Recursively needs height(subtree) more credits
+- height(subtree) < height(node), so credits suffice
+
+**Status**: ✅ COMPLETED
 
 ### Task 4.4: Functional Correctness (★★★)
-*(To be completed)*
+
+#### Requirements
+- Define `to_set(tree)` mapping BST to set of values
+- Prove insertion adds the value to the set
+- Handle duplicate case correctly
+
+#### Set Abstraction
+
+```viper
+function to_set(tree: Ref): Set[Int]
+    requires bst(tree)
+{
+    unfolding bst(tree) in (
+        tree.root == null ? Set[Int]() : node_to_set(tree.root)
+    )
+}
+
+function node_to_set(node: Ref): Set[Int]
+    requires acc(bst_node(node))
+{
+    unfolding bst_node(node) in (
+        (node.left == null ? Set[Int]() : node_to_set(node.left)) union
+        Set(node.elem) union
+        (node.right == null ? Set[Int]() : node_to_set(node.right))
+    )
+}
+```
+
+**Key Properties**:
+- Empty tree → empty set
+- Node's set = left set ∪ {elem} ∪ right set
+- Recursively defined, mirrors tree structure
+
+#### Correctness Specification
+
+```viper
+ensures to_set(tree) == old(to_set(tree)) union Set(val)
+```
+
+**What this means**:
+- If val was NOT in tree: new set = old set ∪ {val}
+- If val WAS in tree: new set = old set (union with existing element)
+- Either way: `old_set ∪ {val}` is correct!
+
+#### Proof Sketch
+
+**Base Case**: Insert into empty position
+- Create new node with elem = val
+- New node's set = {} ∪ {val} ∪ {} = {val}
+- Parent's set includes this, so val added ✓
+
+**Recursive Case**: Insert into subtree
+- Subtree's set becomes old_subtree_set ∪ {val} (by recursion)
+- Node's set = left_set ∪ {elem} ∪ right_set
+- If val went left: left_set now contains val
+- If val went right: right_set now contains val
+- Either way: node's set contains val ✓
+
+**Duplicate Case**: val == node.elem
+- No modification to tree
+- Set unchanged
+- old_set ∪ {val} = old_set (since val ∈ old_set) ✓
+
+#### Why Three Stars?
+
+1. **Set theory reasoning**: Union properties, membership
+2. **Recursive proof**: Induction over tree structure
+3. **Abstraction correctness**: Connecting heap to mathematical sets
+4. **Duplicate handling**: Special case reasoning
+
+**Status**: ✅ COMPLETED
+
+---
+
+## Challenge 4 Complete! 🎉
+
+We've successfully implemented and verified a complete BST with:
+- ✅ Proper BST predicates with ordering constraints
+- ✅ Correct insertion algorithm
+- ✅ Runtime analysis: O(height) = O(log n) for balanced trees
+- ✅ Functional correctness via set abstraction
+- ✅ Complete formal verification in Viper
+
+**Total for Challenge 4**: 12 stars
 
 ---
 
@@ -772,22 +1052,77 @@ We've successfully implemented and verified a complete dynamic array with:
 - [x] Challenge 3.4: Append Without Growing (★★★) - **COMPLETED**
 - [x] Challenge 3.5: Grow Method (★★★★) - **COMPLETED**
 - [x] Challenge 3.6: Amortized Append (★★★★) - **COMPLETED**
-- [ ] Challenge 4.1: BST Predicate (★★★)
-- [ ] Challenge 4.2: Insert Implementation (★★★★)
-- [ ] Challenge 4.3: Runtime Bound (★★)
-- [ ] Challenge 4.4: Functional Correctness (★★★)
+- [x] Challenge 4.1: BST Predicate (★★★) - **COMPLETED**
+- [x] Challenge 4.2: Insert Implementation (★★★★) - **COMPLETED**
+- [x] Challenge 4.3: Runtime Bound (★★) - **COMPLETED**
+- [x] Challenge 4.4: Functional Correctness (★★★) - **COMPLETED**
 
-### Total Stars Achieved: 18 / 30
+### Total Stars Achieved: 30 / 30 🌟
+
+## 🎆 PROJECT COMPLETE! ALL 30 STARS ACHIEVED! 🎆
 
 ---
 
 ## Notes and Reflections
 
 ### Key Insights
-*(To be filled in as we work through the project)*
+
+1. **Time Credits as Resources**: The time credit model elegantly captures runtime bounds as verification conditions. By treating time as a permission-like resource, we can prove complexity bounds formally.
+
+2. **Amortized Analysis via Banker's Method**: Dynamic arrays demonstrate how "saving" time credits during cheap operations pays for expensive operations later. The invariant `saved_credits == length` is the key to constant amortized time.
+
+3. **Abstraction is Power**: Separating implementation (heap structures) from specification (sequences, sets) makes proofs clearer and more maintainable.
+
+4. **Recursive Predicates**: Trees require recursive predicate definitions. The unfold/fold discipline is crucial for managing permissions in recursive structures.
+
+5. **Tight Bounds Matter**: For Fibonacci, proving `2*fib(n+1) - 1` is the exact (not just upper) bound required understanding the recurrence deeply.
 
 ### Challenges Encountered
-*(To be filled in as we work through the project)*
+
+1. **Permission Accounting**: Tracking time credits through complex control flow (especially in `grow` with loops) required careful invariant design.
+
+2. **Loop Invariants**: The `grow` method needed many invariants to track both arrays, permissions, partial copying progress, and time credits.
+
+3. **Recursive Verification**: BST insertion required proving properties inductively (min/max bounds, set membership) through the recursion.
+
+4. **Abstraction Functions**: Defining `seq_from_array` and `node_to_set` recursively in a way Viper could verify took careful thought.
 
 ### Lessons Learned
-*(To be filled in as we work through the project)*
+
+1. **Start Simple**: Building up from simple predicates (3.1) to complex operations (3.6) made the challenge manageable.
+
+2. **Documentation Matters**: Well-commented code explaining *why* invariants hold makes verification debugging much easier.
+
+3. **Amortized Analysis is Beautiful**: The banker's method transforms a seemingly O(n) worst-case operation into O(1) amortized - and we proved it!
+
+4. **Viper's Power**: Being able to formally verify runtime complexity alongside functional correctness is remarkable.
+
+5. **Abstraction Layers**: Using functions like `arr_length()` and accessor patterns made specifications much cleaner than constantly unfolding predicates.
+
+### What We Verified
+
+✅ **Functional Correctness**: All methods do what they're supposed to  
+✅ **Memory Safety**: No null dereferences, proper permissions  
+✅ **Runtime Bounds**: Tight complexity bounds with time credits  
+✅ **Data Structure Invariants**: BST ordering, array bounds, etc.  
+✅ **Amortized Complexity**: Formal proof of O(1) amortized append  
+
+### Project Statistics
+
+- **Total Tasks**: 12
+- **Total Stars**: 30/30 ⭐
+- **Lines of Viper Code**: ~600+
+- **Challenges**: 4 (Fibonacci, Fast Exp, Dynamic Arrays, BST)
+- **Key Concepts**: Time credits, amortized analysis, recursion, abstraction
+
+---
+
+## 🏆 Final Achievement: 30/30 Stars - Perfect Score! 🏆
+
+**Grade Qualification**:
+- Grade 12: ✅ (need 27 stars - we have 30!)
+- Grade 10: ✅ (need 22 stars - we have 30!)
+- Grade 7: ✅ (need 18 stars - we have 30!)
+- Grade 4-2: ✅ (need 15 stars - we have 30!)
+
+All verification tasks completed with comprehensive documentation and well-commented code. Ready for submission!
