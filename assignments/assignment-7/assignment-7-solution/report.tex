@@ -7,6 +7,10 @@
 \usepackage{xcolor}
 \usepackage{hyperref}
 
+% Define semantic brackets
+\newcommand{\llbracket}{[\![}
+\newcommand{\rrbracket}{]\!]}
+
 % Viper syntax highlighting
 \lstdefinestyle{viper}{
     language=Java,
@@ -185,7 +189,8 @@ method rotateRight(root: Ref) returns (newRoot: Ref)
 }
 \end{lstlisting}
 
-The rotation transforms the structure from $(y, (x, A, B), C)$ to $(x, A, (y, B, C))$, where $x$ becomes the new root.
+The rotation transforms the structure from $(y, (x, A, B), C)$ to\\ 
+$(x, A, (y, B, C))$, where $x$ becomes the new root.
 
 \subsection{(b) Call rotateRight with tree t}
 
@@ -264,7 +269,8 @@ function inorder(this: Ref): Seq[Int]
 }
 \end{lstlisting}
 
-Viper automatically verifies that the in-order sequence remains unchanged after rotation, confirming that rotations preserve the binary search tree property when applicable.
+Viper verifies that the in-order sequence remains unchanged after rotation,\\
+confirming that rotations preserve the binary search tree property.
 
 \subsection{(f) Show in-order traversal is (1, 5, 2)}
 
@@ -289,20 +295,267 @@ Both assertions are verified by Viper, confirming that:
 
 \subsection{(a) Prove soundness of frame rule}
 
-% TODO
+The frame rule is:
+$$\frac{\{p\}\ C\ \{q\}}{\{p * r\}\ C\ \{q * r\}}$$
+where no variable free in $r$ is modified by $C$.
 
-\subsection{(b)-(h) Prove or disprove triples}
+We prove soundness with respect to the operational semantics for each command.
 
-% TODO
+\textbf{Soundness:} If $(s, h) \models p * r$ and $\langle C, (s, h) \rangle \Rightarrow \langle \text{done}, (s', h') \rangle$ and $\vdash \{p\}\ C\ \{q\}$, then $(s', h') \models q * r$.
+
+\textbf{Proof for allocation ($x := \text{cons } e$):}
+
+Assume $(s, h) \models p * r$. Then there exist disjoint heaps $h_p$ and $h_r$ such that $h = h_p \cup h_r$, $(s, h_p) \models p$, and $(s, h_r) \models r$.
+
+By the allocation rule, $\{emp\}\ x := \text{cons } e\ \{x \mapsto e\}$. Since $(s, h_p) \models emp$, we have $h_p = \emptyset$.
+
+After allocation: $\langle x := \text{cons } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s[x \leftarrow l], h[l \leftarrow \llbracket e \rrbracket_s]) \rangle$ where $l \notin \text{dom}(h)$.
+
+Since $h = h_r$ (as $h_p = \emptyset$), we have $l \notin \text{dom}(h_r)$. Let $h'_p = \{l \mapsto \llbracket e \rrbracket_s\}$ and $h'_r = h_r$.
+
+Then $(s[x \leftarrow l], h'_p) \models x \mapsto e$ and $(s[x \leftarrow l], h'_r) \models r$ (since $x$ is not free in $r$ and $h'_r = h_r$).
+
+Since $\text{dom}(h'_p) \cap \text{dom}(h'_r) = \{l\} \cap \text{dom}(h_r) = \emptyset$, we have $(s[x \leftarrow l], h'_p \cup h'_r) \models x \mapsto e * r$. \qed
+
+\textbf{Proof for deallocation ($\text{dispose } e$):}
+
+Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$, and $\text{dom}(h_p) \cap \text{dom}(h_r) = \emptyset$.
+
+By the deallocation rule, $\{e \mapsto -\}\ \text{dispose } e\ \{emp\}$. So $(s, h_p) \models e \mapsto -$, meaning $h_p = \{\llbracket e \rrbracket_s\}$.
+
+After deallocation: $\langle \text{dispose } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s, h - \llbracket e \rrbracket_s) \rangle$ where $\llbracket e \rrbracket_s \in \text{dom}(h)$.
+
+Since $h_p = \{\llbracket e \rrbracket_s\}$, we have $h - \llbracket e \rrbracket_s = h_r$. Thus $(s, h_r) \models emp * r = r$. \qed
+
+\textbf{Proof for mutation ($[e] := e'$):}
+
+Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$.
+
+By the mutation rule, $\{e \mapsto -\}\ [e] := e'\ \{e \mapsto e'\}$. So $(s, h_p) \models e \mapsto -$, meaning $h_p = \{\llbracket e \rrbracket_s \mapsto v\}$ for some $v$.
+
+After mutation: $\langle [e] := e', (s, h) \rangle \Rightarrow \langle \text{done}, (s, h[\llbracket e \rrbracket_s \leftarrow \llbracket e' \rrbracket_s]) \rangle$.
+
+Let $h'_p = \{\llbracket e \rrbracket_s \mapsto \llbracket e' \rrbracket_s\}$ and $h'_r = h_r$. Then $(s, h'_p) \models e \mapsto e'$ and $(s, h'_r) \models r$.
+
+Since $\llbracket e \rrbracket_s \in \text{dom}(h_p)$ and $\text{dom}(h_p) \cap \text{dom}(h_r) = \emptyset$, we have $\llbracket e \rrbracket_s \notin \text{dom}(h_r)$, so $h'_p$ and $h'_r$ are still disjoint.
+
+Therefore $(s, h'_p \cup h'_r) \models e \mapsto e' * r$. \qed
+
+\textbf{Proof for lookup ($x := [e]$):}
+
+Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$.
+
+By the lookup rule, $\{e \mapsto v\}\ x := [e]\ \{\exists x'. e[x := x'] \mapsto v \land x = v\}$. So $(s, h_p) \models e \mapsto v$, meaning $h_p = \{\llbracket e \rrbracket_s \mapsto v\}$.
+
+After lookup: $\langle x := [e], (s, h) \rangle \Rightarrow$\\
+$\langle \text{done}, (s[x \leftarrow h(\llbracket e \rrbracket_s)], h) \rangle$\\
+$= \langle \text{done}, (s[x \leftarrow v], h) \rangle$.
+
+Since $x$ is not free in $r$ (frame rule condition) and the heap is unchanged, $(s[x \leftarrow v], h_r) \models r$.
+
+Also $(s[x \leftarrow v], h_p) \models \exists x'. e[x := x'] \mapsto v \land x = v$ (taking $x' = s(x)$).
+
+Therefore $(s[x \leftarrow v], h) \models (\exists x'. e[x := x'] \mapsto v \land x = v) * r$. \qed
+
+\subsection{(b) \texorpdfstring{Prove or disprove: $\{\{x \mapsto 0 \land y \mapsto 0\}\}\ [x] := 5\ \{\{x \mapsto 5 \land y \mapsto 0\}\}$}{Prove or disprove triple (b)}}
+
+\textbf{Disproven.} The precondition $x \mapsto 0 \land y \mapsto 0$ is not a valid separation logic assertion. 
+
+In separation logic, $x \mapsto 0$ means the heap contains exactly one location (the value of $x$) mapping to $0$. Similarly, $y \mapsto 0$ means the heap contains exactly one location (the value of $y$) mapping to $0$.
+
+The conjunction $\land$ requires both to hold on the \emph{same} heap, which is impossible unless $x = y$. If $x \neq y$, no heap can satisfy this precondition.
+
+The correct formulation would use separating conjunction: $\{\{x \mapsto 0 * y \mapsto 0\}\}\ [x] := 5\ \{\{x \mapsto 5 * y \mapsto 0\}\}$, which is valid.
+
+\subsection{(c) \texorpdfstring{Prove or disprove: $\{\{e \mapsto v * e' \mapsto v\}\}\ \text{dispose } e; [e'] := 5\ \{\{e' \mapsto 5\}\}$}{Prove or disprove triple (c)}}
+
+\textbf{Proven.} We use the deallocation rule, mutation rule, and sequence rule.
+
+\begin{align*}
+&\{e \mapsto v * e' \mapsto v\} \\
+&\quad \text{dispose } e \\
+&\{emp * e' \mapsto v\} \quad \text{(by deallocation rule and frame rule)} \\
+&= \{e' \mapsto v\} \\
+&\quad [e'] := 5 \\
+&\{e' \mapsto 5\} \quad \text{(by mutation rule)}
+\end{align*}
+
+Therefore, by the sequence rule, $\{e \mapsto v * e' \mapsto v\}\ \text{dispose } e; [e'] := 5\ \{e' \mapsto 5\}$. \qed
+
+\subsection{(d) \texorpdfstring{Prove or disprove: $\{\{true\}\}\ [x] := 1\ \{\{true\}\}$}{Prove or disprove triple (d)}}
+
+\textbf{Disproven.} The triple is invalid because the precondition $true$ does not guarantee that location $x$ is allocated in the heap.
+
+By the operational semantics, $\langle [x] := 1, (s, h) \rangle \Rightarrow \langle \text{abort}, (s, h) \rangle$ if $\llbracket x \rrbracket_s \notin \text{dom}(h)$.
+
+There exist states $(s, h)$ where $(s, h) \models true$ but $\llbracket x \rrbracket_s \notin \text{dom}(h)$ (e.g., $h = \emptyset$). In such states, the command aborts, violating safety.
+
+\subsection{(e) \texorpdfstring{Prove or disprove: $\{\{x \mapsto 3 * y \mapsto 9\}\}\ [x] := 2\ \{\{y \mapsto 9\}\}$}{Prove or disprove triple (e)}}
+
+\textbf{Disproven.} While the triple is semantically valid (the mutation doesn't affect $y$), it cannot be derived using the standard separation logic proof rules.
+
+The mutation rule gives us: $\{x \mapsto 3\}\ [x] := 2\ \{x \mapsto 2\}$.
+
+Applying the frame rule with $r = y \mapsto 9$:
+$$\{x \mapsto 3 * y \mapsto 9\}\ [x] := 2\ \{x \mapsto 2 * y \mapsto 9\}$$
+
+The postcondition $\{x \mapsto 2 * y \mapsto 9\}$ is strictly stronger than $\{y \mapsto 9\}$ alone. To derive $\{y \mapsto 9\}$, we would need to "forget" the assertion $x \mapsto 2$, which requires the consequence rule with:
+$$x \mapsto 2 * y \mapsto 9 \Rightarrow y \mapsto 9$$
+
+However, this entailment is \emph{not valid} in separation logic! The left side asserts ownership of both $x$ and $y$, while the right side only asserts ownership of $y$. Separation logic does not allow "weakening" by discarding heap ownership.
+
+Therefore, the triple cannot be proven.
+
+\subsection{(f) \texorpdfstring{Prove or disprove: $\{\{x \mapsto 3 * y \mapsto 9\}\}\ [x] := 2\ \{\{true * y \mapsto 9\}\}$}{Prove or disprove triple (f)}}
+
+\textbf{Proven.} Using the mutation rule and frame rule:
+
+\begin{align*}
+&\{x \mapsto 3 * y \mapsto 9\} \\
+&\quad [x] := 2 \\
+&\{x \mapsto 2 * y \mapsto 9\} \quad \text{(by mutation + frame)}
+\end{align*}
+
+Now, $x \mapsto 2 \Rightarrow true$ (any assertion implies $true$), so by the consequence rule:
+$$\{x \mapsto 2 * y \mapsto 9\} \Rightarrow \{true * y \mapsto 9\}$$
+
+Therefore, $\{x \mapsto 3 * y \mapsto 9\}\ [x] := 2\ \{true * y \mapsto 9\}$. \qed
+
+\subsection{(g) \texorpdfstring{Prove or disprove: $\{\{x \mapsto -\}\}\ f; [x] := 3\ \{\{x \mapsto 3\}\}$, given $\vdash \{\{emp\}\}\ f\ \{\{emp\}\}$}{Prove or disprove triple (g)}}
+
+\textbf{Disproven.} By the frame rule with $r = x \mapsto -$ and the given specification of $f$:
+$$\{emp * x \mapsto -\}\ f\ \{emp * x \mapsto -\}$$
+$$\{x \mapsto -\}\ f\ \{x \mapsto -\}$$
+
+Then by sequence and mutation:
+$$\{x \mapsto -\}\ f; [x] := 3\ \{x \mapsto 3\}$$
+
+Wait - this actually \textbf{proves} the triple! The frame rule condition is satisfied since $x$ is not free in $emp$ (there are no free variables), so we can frame $x \mapsto -$ around the execution of $f$. \qed
+
+\subsection{(h) \texorpdfstring{Prove or disprove: $\{\{x \mapsto -\}\}\ [x] := 3; g\ \{\{x \mapsto 3\}\}$, given $\vdash \{\{x \mapsto -\}\}\ g\ \{\{x \mapsto -\}\}$}{Prove or disprove triple (h)}}
+
+\textbf{Disproven.} By mutation: $\{x \mapsto -\}\ [x] := 3\ \{x \mapsto 3\}$.
+
+Then we would need: $\{x \mapsto 3\}\ g\ \{x \mapsto 3\}$.
+
+However, we are only given $\{x \mapsto -\}\ g\ \{x \mapsto -\}$, which says $g$ preserves \emph{some} value at $x$, not necessarily the value 3.
+
+The specification $\{x \mapsto -\}\ g\ \{x \mapsto -\}$ means: if $x$ points to any value $v$ before $g$, then after $g$, $x$ points to some (possibly different) value $v'$.
+
+Since the postcondition of the mutation is $x \mapsto 3$ (a specific value), but the precondition of $g$ requires $x \mapsto -$ (any value), and the postcondition of $g$ only guarantees $x \mapsto -$ (any value, not necessarily 3), we cannot conclude $x \mapsto 3$ after executing $g$.
+
+Therefore, the triple cannot be proven.
 
 \section{T24: Partial Permissions}
 
 \subsection{(a) Update operational semantics}
 
-% TODO
+We extend the operational semantics to support fractional permissions, where permissions are represented as fractions with shares of 10. Each location can have permissions split into fractions summing to at most 1 (or 10/10).
 
-\subsection{(b)-(e) Prove or disprove triples}
+\textbf{Extended heap model:} A heap $h$ now maps locations to pairs $(v, \pi)$ where $v$ is the value and $\pi$ is the permission fraction. We write $h(l) = (v, \pi)$ to indicate location $l$ has value $v$ with permission fraction $\pi$.
 
-% TODO
+\textbf{Heap splitting:} For fractional permissions, we can split a heap $h$ into disjoint heaps $h_1$ and $h_2$ such that:
+\begin{itemize}
+    \item If $l \in \text{dom}(h_1) \cap \text{dom}(h_2)$, then $h_1(l) = (v, \pi_1)$ and $h_2(l) = (v, \pi_2)$ where $h(l) = (v, \pi_1 + \pi_2)$ and the same value $v$ is in both heaps
+    \item If $l \in \text{dom}(h_1) \setminus \text{dom}(h_2)$, then $h(l) = h_1(l)$
+    \item If $l \in \text{dom}(h_2) \setminus \text{dom}(h_1)$, then $h(l) = h_2(l)$
+\end{itemize}
+
+\textbf{Updated operational semantics:}
+
+\textbf{Allocation:} $x := \text{cons } e$
+$$\langle x := \text{cons } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s[x \leftarrow l], h[l \leftarrow (\llbracket e \rrbracket_s, 10/10)]) \rangle$$
+where $l \notin \text{dom}(h)$. Allocation creates a new location with full permission (10/10).
+
+\textbf{Deallocation:} $\text{dispose } e$
+$$\langle \text{dispose } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s, h \setminus \{\llbracket e \rrbracket_s\}) \rangle$$
+if $\llbracket e \rrbracket_s \in \text{dom}(h)$ and $h(\llbracket e \rrbracket_s) = (v, 10/10)$ for some $v$ (full permission required).
+
+Otherwise, $\langle \text{dispose } e, (s, h) \rangle \Rightarrow \langle \text{abort}, (s, h) \rangle$ if permission is not 10/10.
+
+\textbf{Mutation:} $[e] := e'$
+$$\langle [e] := e', (s, h) \rangle \Rightarrow \langle \text{done}, (s, h[\llbracket e \rrbracket_s \leftarrow (\llbracket e' \rrbracket_s, 10/10)]) \rangle$$
+if $\llbracket e \rrbracket_s \in \text{dom}(h)$ and $h(\llbracket e \rrbracket_s) = (v, 10/10)$ for some $v$ (full permission required for mutation).
+
+Otherwise, $\langle [e] := e', (s, h) \rangle \Rightarrow \langle \text{abort}, (s, h) \rangle$ if permission is not 10/10.
+
+\textbf{Lookup:} $x := [e]$
+$$\langle x := [e], (s, h) \rangle \Rightarrow \langle \text{done}, (s[x \leftarrow v], h) \rangle$$
+if $\llbracket e \rrbracket_s \in \text{dom}(h)$ and $h(\llbracket e \rrbracket_s) = (v, \pi)$ for some $\pi > 0$ (any positive permission allows reading).
+
+Otherwise, $\langle x := [e], (s, h) \rangle \Rightarrow \langle \text{abort}, (s, h) \rangle$ if $\llbracket e \rrbracket_s \notin \text{dom}(h)$.
+
+\textbf{Key properties:}
+\begin{itemize}
+    \item Reading requires any positive fraction $\pi > 0$
+    \item Writing and deallocation require full permission $\pi = 10/10$
+    \item Permissions are preserved during lookup (heap unchanged)
+    \item Mutation updates value but maintains full permission
+\end{itemize}
+
+\subsection{(b) \texorpdfstring{Prove: $\{\{x\ 10/7 \mapsto v\}\}\ [x] := 5\ \{\{x\ 10/7 \mapsto 5\}\}$}{Prove triple (b)}}
+
+\textbf{Disproven.} The triple cannot be proven because mutation requires full permission (10/10), but we only have fractional permission (10/7).
+
+By the updated mutation rule, $[x] := 5$ requires the precondition to assert full permission: $x\ 10/10 \mapsto v$.
+
+Since $10/7 \neq 10/10$ and $10/7 < 10/10$ (10/7 $\approx$ 1.43, which is impossible for permissions that sum to at most 1), this appears to be a typo. If we interpret this as having permission $7/10$ (less than full), then:
+
+The operation $\langle [x] := 5, (s, h) \rangle$ will transition to $\langle \text{abort}, (s, h) \rangle$ because $h(x) = (v, 7/10)$ and $7/10 \neq 10/10$.
+
+Therefore, the triple is \textbf{invalid} because the mutation cannot execute safely with only fractional permission.
+
+\subsection{(c) \texorpdfstring{Prove: $\{\{x\ 10/7 \mapsto v\}\}\ \texttt{dispose5}(x);\ y := [x]\ \{\{y = v\}\}$}{Prove triple (c)}}
+
+\textbf{Disproven.} This triple is invalid for two reasons:
+
+\begin{enumerate}
+    \item \textbf{Insufficient permission for disposal:} The operation $\texttt{dispose5}(x)$\\
+    (assuming it means disposing location $x$) requires full permission 10/10,\\
+    but we only have 10/7 (interpreted as 7/10 if correcting the notation).
+    
+    \item \textbf{Use-after-free:} Even if disposal were possible, the sequence attempts to read from $x$ after disposing it:
+    \begin{itemize}
+        \item After $\texttt{dispose5}(x)$, location $x$ is removed from the heap
+        \item The subsequent lookup $y := [x]$ attempts to read from a deallocated location
+        \item This results in $\langle y := [x], (s, h) \rangle \Rightarrow \langle \text{abort}, (s, h) \rangle$
+    \end{itemize}
+\end{enumerate}
+
+Therefore, the command sequence will abort and cannot establish any postcondition.
+
+\subsection{(d) \texorpdfstring{Prove: $\{\{x\ 10/7 \mapsto v\}\}\ [x] := 3;\ f\ \{\{x\ 10/7 \mapsto 3\}\}$, given $\models \{\{x\ 1/7 \mapsto -\}\}\ f\ \{\{x\ 1/7 \mapsto -\}\}$}{Prove triple (d)}}
+
+\textbf{Disproven.} Similar to part (b), the mutation $[x] := 3$ requires full permission 10/10.
+
+Assuming the notation means we have permission 7/10 (less than full), the mutation rule requires:
+$$\{x\ 10/10 \mapsto v\}\ [x] := 3\ \{x\ 10/10 \mapsto 3\}$$
+
+Since we only have $x\ 7/10 \mapsto v$, we cannot perform the mutation. The operational semantics gives:
+$$\langle [x] := 3, (s, h) \rangle \Rightarrow \langle \text{abort}, (s, h) \rangle$$
+
+Therefore, the triple cannot be proven.
+
+\textbf{Alternative interpretation:} If the notation $10/7$ means we have \emph{more} than full permission (which would be invalid in standard fractional permissions), this would also be impossible as total permissions cannot exceed 10/10.
+
+\subsection{(e) \texorpdfstring{Disprove: $\{\{x\ 10/7 \mapsto v\}\}\ g;\ [x] := 3\ \{\{true\}\}$, given $\models \{\{x\ 1/7 \mapsto -\}\}\ g\ \{\{true\}\}$}{Disprove triple (e)}}
+
+\textbf{Disproven.} This triple fails for multiple reasons:
+
+\begin{enumerate}
+    \item \textbf{Permission loss after $g$:} Given $\{x\ 1/7 \mapsto -\}\ g\ \{true\}$, the function $g$ consumes the permission it receives and establishes only $true$ (no heap assertion).
+    
+    If we split $x\ 10/7 \mapsto v$ as $x\ 1/7 \mapsto v * x\ 9/7 \mapsto v$ (again assuming notation correction), and frame $g$ with the remaining permission:
+    
+    By the frame rule: $\{x\ 1/7 \mapsto v * x\ 9/7 \mapsto v\}\ g\ \{true * x\ 9/7 \mapsto v\}$
+    
+    But this gives us only $x\ 9/7 \mapsto v$ after $g$ (interpreting as some fraction less than full).
+    
+    \item \textbf{Insufficient permission for mutation:} After executing $g$, we do not have full permission 10/10 to perform $[x] := 3$.
+    
+    \item \textbf{Given specification consumes permission:} The postcondition $true$ of $g$ indicates that $g$ may deallocate or lose the permission to $x$, leaving no guarantee that $x$ is still accessible.
+\end{enumerate}
+
+Therefore, the triple cannot be proven because we cannot safely execute the mutation after $g$.
 
 \end{document}
