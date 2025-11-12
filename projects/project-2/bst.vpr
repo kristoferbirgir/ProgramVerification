@@ -50,14 +50,54 @@ function min(a : Int, b : Int) : Int
 // TASK 4.1: Define a predicate for binary search trees and individual BST nodes.
 // You may define additional fields, predicates, arguments or heap-based functions.
 
+// Helper functions to get min/max values in a subtree
+// These are used to express BST ordering constraints
+
+function tree_min(node: Ref): Int
+    requires bst_node(node)
+    requires node != null
+{
+    unfolding bst_node(node) in (
+        node.left == null ? node.elem : min(node.elem, tree_min(node.left))
+    )
+}
+
+function tree_max(node: Ref): Int
+    requires bst_node(node)
+    requires node != null
+{
+    unfolding bst_node(node) in (
+        node.right == null ? node.elem : max(node.elem, tree_max(node.right))
+    )
+}
+
 // The whole tree has just a reference to the root
 // The empty tree is represented by self.root == null
-predicate bst(self: Ref) // TODO
+predicate bst(self: Ref) {
+    acc(self.root) &&
+    (self.root == null || bst_node(self.root))
+}
 
 // A single BST node. Apart from field permissions, the current value
 // must be greater than the largest value in the left subtree and
 // smaller than the smallest value in the right subtree.
-predicate bst_node(self: Ref) // TODO
+predicate bst_node(self: Ref) {
+    self != null &&
+    acc(self.elem) &&
+    acc(self.left) &&
+    acc(self.right) &&
+    
+    // Left subtree is either null or a valid BST
+    (self.left == null || bst_node(self.left)) &&
+    
+    // Right subtree is either null or a valid BST
+    (self.right == null || bst_node(self.right)) &&
+    
+    // BST ordering property:
+    // All values in left subtree < current value < all values in right subtree
+    (self.left != null ==> tree_max(self.left) < self.elem) &&
+    (self.right != null ==> self.elem < tree_min(self.right))
+}
 // -----------------------------------------
 
 

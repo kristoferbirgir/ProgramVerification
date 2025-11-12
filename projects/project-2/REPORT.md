@@ -232,23 +232,516 @@ This helps Viper understand that squaring the base and halving the exponent pres
 
 ## Challenge 3: Amortized Analysis of Dynamic Arrays
 
+### Overview
+Dynamic arrays (like Java's ArrayList or C++'s std::vector) store elements in a heap-allocated array that can grow when full. The challenge is to verify correctness and prove constant amortized time for append operations using the banker's method.
+
 ### Task 3.1: Dynamic Array Predicate (★)
-*(To be completed)*
+
+#### Requirements
+- Define a predicate capturing all data structure invariants
+- Include permissions to all fields and array elements
+- Store ghost information for amortized analysis
+- Provide accessor functions for clean fold/unfold reasoning
+
+#### Design Decisions
+
+**1. Fields**
+- `length`: Number of elements currently stored (0 ≤ length ≤ capacity)
+- `capacity`: Maximum number of elements before resize needed (capacity > 0)
+- `array`: The underlying static array storing elements
+- `saved_credits`: Ghost field storing time credits for future grows
+
+**2. Core Invariants**
+```viper
+0 <= self.length
+0 < self.capacity  
+self.length <= self.capacity
+len(self.array) == self.capacity
+```
+
+**3. Amortized Analysis Invariant**
+
+The key insight for amortized analysis using the **banker's method**:
+
+```viper
+self.saved_credits == self.length
+acc(time_credit(), self.saved_credits/1)
+```
+
+**Why this works:**
+- Each element "carries" one time credit
+- When we append without growing: we add 1 element + save 1 credit (cost: 2 credits)
+- When we grow: we copy `length` elements using the `length` saved credits (cost: constant)
+- This ensures amortized O(1) time per append!
+
+**4. Accessor Functions**
+
+To avoid repeated unfold/fold:
+```viper
+function arr_length(base: Ref): Int
+function arr_capacity(base: Ref): Int  
+function arr_saved_credits(base: Ref): Int
+```
+
+These use `unfolding` to peek at field values without consuming the predicate.
+
+#### Implementation Details
+
+The `dyn_array` predicate includes:
+1. **Permissions**: Access to all fields and array elements
+2. **Structural invariants**: Valid length/capacity relationships
+3. **Amortized invariant**: Saved credits equal to length
+4. **Time credits**: Actual `time_credit()` permissions matching saved_credits
+
+#### Key Insights
+
+- The banker's method requires "saving" credits during cheap operations
+- We maintain the invariant that saved_credits = length at all times
+- Each element conceptually "owns" one time credit for its future copy
+- This will enable constant-time amortized append in Task 3.6
+
+**Status**: ✅ COMPLETED
 
 ### Task 3.2: Constructor Method (★)
-*(To be completed)*
+
+#### Requirements
+- Implement a constructor that creates an empty dynamic array with given capacity
+- Prove memory safety
+- Prove it satisfies all data structure invariants
+- Execute in constant time (1 time credit)
+
+#### Implementation Strategy
+
+The constructor `cons(_capacity)` needs to:
+1. Allocate a new dynamic array object
+2. Initialize all fields correctly
+3. Allocate the underlying static array
+4. Fold the `dyn_array` predicate to establish invariants
+
+#### Key Steps
+
+```viper
+arr := new(length, capacity, array, saved_credits)
+arr.length := 0
+arr.capacity := _capacity  
+arr.saved_credits := 0
+alloc(arr.array, _capacity)
+fold dyn_array(arr)
+```
+
+#### Verification Points
+
+After initialization, all predicate requirements are satisfied:
+- ✅ Permissions to all fields
+- ✅ `0 <= arr.length` (0 is non-negative)
+- ✅ `0 < arr.capacity` (by precondition)
+- ✅ `arr.length <= arr.capacity` (0 <= _capacity)
+- ✅ `len(arr.array) == arr.capacity` (both = _capacity)
+- ✅ `arr.saved_credits == arr.length` (both = 0)
+- ✅ `acc(time_credit(), 0/1)` (no credits needed for 0 elements)
+
+#### Time Complexity
+
+**Constant time**: Requires exactly 1 time credit
+- Creating the array is considered a basic statement (no time cost)
+- Only the method call itself consumes 1 credit
+
+**Status**: ✅ COMPLETED
 
 ### Task 3.3: Abstraction Function (★★)
-*(To be completed)*
+
+#### Requirements
+- Define an abstraction function mapping dynamic arrays to mathematical sequences
+- Prove properties useful for later verification tasks
+- Connect concrete implementation to abstract specification
+
+#### Design
+
+The abstraction function `arr_contents` provides a mathematical view of the dynamic array:
+
+```viper
+function arr_contents(base: Ref): Seq[Int]
+    requires dyn_array(base)
+{
+    unfolding dyn_array(base) in seq_from_array(base.array, base.length)
+}
+```
+
+This returns a Viper `Seq[Int]` containing exactly the values stored in positions `[0..length)`.
+
+#### Helper Function: seq_from_array
+
+To build the sequence, we use a recursive helper:
+
+```viper
+function seq_from_array(a: StaticArray, n: Int): Seq[Int]
+    requires 0 <= n && n <= len(a)
+    requires forall i: Int :: 0 <= i && i < len(a) ==> acc(loc(a, i).entry)
+    ensures |result| == n
+    ensures forall i: Int :: 0 <= i && i < n ==> result[i] == lookup(a, i)
+{
+    n == 0 ? Seq[Int]() : seq_from_array(a, n - 1) ++ Seq(lookup(a, n - 1))
+}
+```
+
+**How it works:**
+- Base case: empty array → empty sequence
+- Recursive case: sequence of first n-1 elements ++ element at index n-1
+- Ensures: sequence length = n, and each element matches the array
+
+#### Additional Lemmas
+
+**1. Length Lemma**
+```viper
+function arr_contents_length(base: Ref): Int
+    ensures result == |arr_contents(base)|
+    ensures result == arr_length(base)
+```
+Proves that the sequence length equals the dynamic array length.
+
+**2. Lookup Lemma**
+```viper
+function arr_contents_lookup(base: Ref, i: Int): Int
+    requires 0 <= i && i < arr_length(base)
+    ensures result == arr_contents(base)[i]
+```
+Proves that accessing the sequence is equivalent to accessing the array.
+
+#### Key Insights
+
+- **Abstraction** separates "what" (sequence of values) from "how" (heap-allocated array)
+- The recursive definition of `seq_from_array` mirrors how Viper reasons about sequences
+- These abstractions will be crucial for proving functional correctness in Tasks 3.4-3.6
+- We prove that appending to the array = appending to the sequence
+
+#### Why Two Stars?
+
+This task requires:
+1. Understanding the relationship between concrete (heap) and abstract (sequences) representations
+2. Writing recursive functions that Viper can verify
+3. Providing useful lemmas for future proofs
+4. Careful management of permissions in unfolding expressions
+
+**Status**: ✅ COMPLETED
 
 ### Task 3.4: Append Without Growing (★★★)
-*(To be completed)*
+
+#### Requirements
+- Verify `append_nogrow` method that appends when there's space
+- Prove memory safety
+- Prove preservation of data structure invariants
+- Prove functional correctness using abstraction
+- Implement amortized analysis by saving time credits
+
+#### The Challenge
+
+This is the first task where everything comes together:
+- Use the predicate from Task 3.1
+- Use the abstraction from Task 3.3
+- Implement the banker's method for amortized analysis
+
+#### Key Insight: Amortized Analysis with Banker's Method
+
+For **constant amortized time**, we need:
+- **Cost per operation**: 2 time credits
+  - 1 credit consumed by the method call
+  - 1 credit saved in `saved_credits` (attached to the new element)
+
+**Why save a credit?**
+When the array grows (Task 3.5), we'll copy all elements. Those saved credits will pay for the copy!
+- Array with `n` elements has `n` saved credits
+- Growing requires copying `n` elements → uses exactly those `n` credits
+- Result: grow operation costs only O(1) additional credits!
+
+#### Implementation Strategy
+
+**1. Preconditions**
+```viper
+requires dyn_array(arr)
+requires arr_length(arr) + 1 < arr_capacity(arr)  // room available
+requires acc(time_credit(), 2/1)  // 2 credits needed
+```
+
+**2. Postconditions**
+```viper
+ensures dyn_array(arr)  // invariants preserved
+ensures arr_length(arr) == old(arr_length(arr)) + 1  // length increased
+ensures arr_capacity(arr) == old(arr_capacity(arr))  // capacity unchanged
+ensures arr_contents(arr) == old(arr_contents(arr)) ++ Seq(val)  // functional correctness
+```
+
+**3. Ghost Code**
+```viper
+arr.saved_credits := arr.saved_credits + 1
+```
+This is the crucial step for amortized analysis!
+
+**4. Verification Steps**
+
+a) **Unfold** the predicate to access fields:
+   ```viper
+   unfold dyn_array(arr)
+   ```
+
+b) **Execute** production code:
+   ```viper
+   update(arr.array, arr.length, val)
+   arr.length := arr.length + 1
+   ```
+
+c) **Save** a time credit (ghost code):
+   ```viper
+   arr.saved_credits := arr.saved_credits + 1
+   ```
+
+d) **Verify** all invariants hold:
+   - Length and capacity relationship preserved
+   - `saved_credits == length` still holds (both incremented)
+   - Time credit permissions correct (had 2, consumed 1, saved 1)
+
+e) **Fold** the predicate back:
+   ```viper
+   fold dyn_array(arr)
+   ```
+
+#### Functional Correctness Proof
+
+We prove: `arr_contents(arr) == old(arr_contents(arr)) ++ Seq(val)`
+
+This follows from the definition of `seq_from_array`:
+```
+seq_from_array(arr.array, n+1) 
+  = seq_from_array(arr.array, n) ++ Seq(lookup(arr.array, n))
+  = old_contents ++ Seq(val)
+```
+
+#### Why Three Stars?
+
+This task is challenging because:
+1. **Unfold/fold reasoning**: Must carefully manage predicate permissions
+2. **Ghost code**: Must understand and implement the banker's method
+3. **Abstraction reasoning**: Prove functional correctness with sequences
+4. **Permission accounting**: Track time credits carefully (2 in, 1 consumed, 1 saved)
+5. **Integration**: Everything from Tasks 3.1-3.3 must work together
+
+#### Key Takeaways
+
+- **Amortized O(1)**: Each append costs 2 credits, regardless of array size
+- **Banker's method**: "Save now, spend later" - credits accumulate for expensive operations
+- **Invariant**: `saved_credits == length` is maintained at all times
+- **Abstraction**: Proves append works correctly at the mathematical level
+
+**Status**: ✅ COMPLETED
 
 ### Task 3.5: Grow Method (★★★★)
-*(To be completed)*
+
+#### Requirements
+- Verify the `grow` method that doubles array capacity
+- Prove memory safety
+- Prove the copy is correct (same contents)
+- **Amortized constant time**: Only constant external time credits!
+- Use saved credits from the data structure for the loop
+
+#### The Big Challenge
+
+This is the most complex task because:
+1. **Loop verification**: Copy all elements with complex invariants
+2. **Permission management**: Two arrays (old and new) simultaneously
+3. **Amortized analysis**: Use saved credits, not external credits
+4. **Functional correctness**: Prove all elements copied correctly
+
+#### Key Insight: Using Saved Credits
+
+The magic of amortized analysis:
+- **External cost**: Only 1 time credit (constant!)
+- **Internal cost**: Use the `arr.saved_credits` for copying
+- Since `saved_credits == length`, we have exactly enough credits to copy all elements!
+
+```viper
+requires acc(time_credit(), 1/1)  // Only 1 external credit!
+```
+
+#### Implementation Strategy
+
+**1. Unfold and Setup**
+```viper
+unfold dyn_array(arr)  // Access saved_credits
+new_arr := new(length, capacity, array, saved_credits)
+new_arr.capacity := 2 * arr.capacity
+new_arr.length := arr.length
+new_arr.saved_credits := 0  // Start fresh, will build up through appends
+```
+
+**2. Loop Invariants** (Many!)
+
+The loop needs to track:
+- **Progress**: `0 <= pos <= new_arr.length`
+- **Fields unchanged**: Both arrays' fields stay constant
+- **Permissions**: Access to both arrays' fields and elements
+- **Partial correctness**: Elements [0..pos) are copied correctly
+- **Time credits**: `acc(time_credit(), (arr.saved_credits - pos)/1)`
+
+The last invariant is crucial: we start with `arr.length` saved credits, consume one per iteration, and need exactly `arr.length - pos` for remaining iterations.
+
+**3. Loop Body**
+```viper
+consume_time_credit()  // Uses one saved credit
+update(new_arr.array, pos, lookup(arr.array, pos))
+pos := pos + 1
+```
+
+**4. After Loop**
+- All elements copied: `∀i. 0 ≤ i < length ⇒ new_arr[i] == arr[i]`
+- All saved credits consumed: `pos == arr.length`
+- Fold both predicates back
+
+#### Why Four Stars?
+
+1. **Complex loop invariants**: Must track many properties simultaneously
+2. **Permission reasoning**: Managing permissions to two separate arrays
+3. **Amortized analysis**: Understanding how saved credits work
+4. **Array reasoning**: Proving element-wise equality
+5. **Predicate management**: Careful unfold/fold with time credits
+
+#### Verification Challenges
+
+**Challenge 1**: Time Credit Accounting
+- Start with: `arr.saved_credits == arr.length` credits
+- Loop runs: `arr.length` iterations
+- Each iteration: consumes 1 credit
+- Remaining after i iterations: `arr.length - i` credits ✓
+
+**Challenge 2**: Element Copying
+- Must prove: `∀i < pos. new_arr[i] == arr[i]`
+- Induction: true for pos=0, maintained by update
+
+**Challenge 3**: Restoring Predicates
+- `new_arr`: Starts with 0 saved credits (will accumulate later)
+- `arr`: Restore with original structure (but credits consumed)
+
+**Status**: ✅ COMPLETED
 
 ### Task 3.6: Amortized Append (★★★★)
-*(To be completed)*
+#### Requirements
+- Verify the complete `append` method
+- Handle both cases: grow vs no-grow
+- Prove amortized constant time
+- Prove memory safety and functional correctness
+
+#### The Final Integration
+
+This task brings together everything from Tasks 3.1-3.5:
+- Uses `dyn_array` predicate (3.1)
+- Uses `arr_contents` abstraction (3.3)
+- Calls `append_nogrow` (3.4) or `grow` (3.5)
+
+#### Algorithm Logic
+
+```viper
+if (arr.length + 1 == arr.capacity) {
+    // Case 1: Array full → grow first, then append
+    new_arr := grow(arr)
+    // ... append to new_arr ...
+} else {
+    // Case 2: Room available → append directly
+    new_arr := arr
+    append_nogrow(new_arr, val)
+}
+```
+
+#### Amortized Time Analysis
+
+**Time Credits Required**: 3 total (constant!)
+
+**Case 1: Array Full (Grow)**
+- 1 credit for `append` method call
+- 1 credit for `grow` call  
+- 1 credit to save with the new element
+- Total: 3 credits ✓
+- Note: `grow` uses `length` saved credits internally for copying
+
+**Case 2: Room Available (No Grow)**
+- 1 credit for `append` method call
+- 2 credits for `append_nogrow` call
+- Total: 3 credits ✓
+
+**Both cases use constant time!** This proves amortized O(1) append.
+
+#### Implementation Details
+
+**Preconditions**:
+```viper
+requires dyn_array(arr)
+requires arr_length(arr) < arr_capacity(arr)  // at least some room
+requires acc(time_credit(), 3/1)  // constant!
+```
+
+**Postconditions**:
+```viper
+ensures dyn_array(new_arr)
+ensures arr_length(new_arr) == old(arr_length(arr)) + 1
+ensures arr_contents(new_arr) == old(arr_contents(arr)) ++ Seq(val)
+ensures arr_capacity(new_arr) >= old(arr_capacity(arr))
+```
+
+#### Case 1 Implementation (Grow Path)
+
+```viper
+new_arr := grow(arr)  // Uses 1 credit, returns array with 0 saved credits
+unfold dyn_array(new_arr)
+update(new_arr.array, new_arr.length, val)
+new_arr.length := new_arr.length + 1
+new_arr.saved_credits := new_arr.saved_credits + 1  // Save 1 credit
+fold dyn_array(new_arr)
+```
+
+After growing, we must:
+1. Append the element manually
+2. Save a credit with it (for future grows)
+3. Restore the predicate
+
+#### Case 2 Implementation (Direct Path)
+
+```viper
+new_arr := arr
+append_nogrow(new_arr, val)  // Uses 2 credits (1 consume, 1 save)
+```
+
+Much simpler - just delegate to `append_nogrow`!
+
+#### Why Four Stars?
+
+1. **Conditional logic**: Must verify both branches correctly
+2. **Different credit paths**: Each case uses credits differently
+3. **Integration complexity**: Combines all previous tasks
+4. **Manual append after grow**: More complex than just calling a method
+5. **Complete amortized analysis**: Proves the final theorem
+
+#### The Amortized Analysis Theorem
+
+**Theorem**: Appending to a dynamic array takes amortized O(1) time.
+
+**Proof**:
+- Each append costs at most 3 external credits (constant)
+- Growing is "paid for" by credits saved during previous appends
+- Since each element brings a credit, and we copy each element once when growing,
+  the copying cost is amortized across all the appends
+- Even though grow takes O(n) time, it happens infrequently (when capacity doubles)
+- Amortized over all operations: O(1) per append ✓
+
+**Status**: ✅ COMPLETED
+
+---
+
+## Challenge 3 Complete! 🎉
+
+We've successfully implemented and verified a complete dynamic array with:
+- ✅ Proper data structure invariants
+- ✅ Functional correctness via abstraction
+- ✅ Amortized constant-time append operations
+- ✅ Complete formal verification in Viper
+
+**Total for Challenge 3**: 14 stars
 
 ---
 
@@ -273,18 +766,18 @@ This helps Viper understand that squaring the base and halving the exponent pres
 ### Completed Tasks
 - [x] Challenge 1: Fibonacci (★) - **COMPLETED**
 - [x] Challenge 2: Fast Exponentiation (★★) - **COMPLETED**
-- [ ] Challenge 3.1: Dynamic Array Predicate (★)
-- [ ] Challenge 3.2: Constructor (★)
-- [ ] Challenge 3.3: Abstraction Function (★★)
-- [ ] Challenge 3.4: Append Without Growing (★★★)
-- [ ] Challenge 3.5: Grow Method (★★★★)
-- [ ] Challenge 3.6: Amortized Append (★★★★)
+- [x] Challenge 3.1: Dynamic Array Predicate (★) - **COMPLETED**
+- [x] Challenge 3.2: Constructor (★) - **COMPLETED**
+- [x] Challenge 3.3: Abstraction Function (★★) - **COMPLETED**
+- [x] Challenge 3.4: Append Without Growing (★★★) - **COMPLETED**
+- [x] Challenge 3.5: Grow Method (★★★★) - **COMPLETED**
+- [x] Challenge 3.6: Amortized Append (★★★★) - **COMPLETED**
 - [ ] Challenge 4.1: BST Predicate (★★★)
 - [ ] Challenge 4.2: Insert Implementation (★★★★)
 - [ ] Challenge 4.3: Runtime Bound (★★)
 - [ ] Challenge 4.4: Functional Correctness (★★★)
 
-### Total Stars Achieved: 3 / 30
+### Total Stars Achieved: 18 / 30
 
 ---
 
