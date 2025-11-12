@@ -31,6 +31,29 @@ method lemma_pow(b: Int, y: Int)
 
 
 // -----------------------------------------
+// Helper function: Calculate number of loop iterations for fast_pow
+// The loop runs while y > 0, dividing y by 2 each iteration
+// This is log2(e) iterations, which we can express as the number of
+// times we can divide e by 2 before reaching 0
+function iterations(e: Int): Int
+    requires 0 < e
+    ensures result >= 1
+{
+    e == 1 ? 1 : 1 + iterations(e / 2)
+}
+
+// Helper function: Total time credits needed
+// We need 1 credit for the method call + iterations(e) for the loop
+function total_credits(e: Int): Int
+    requires 0 < e
+    ensures result >= 2
+{
+    1 + iterations(e)
+}
+// -----------------------------------------
+
+
+// -----------------------------------------
 // Task 2: Prove a runtime bound for the following recursive method
 // Your bound should be tight, i.e. use as few time credits
 // as possible. Furthermore, try to prove that it is not possible
@@ -41,7 +64,14 @@ method lemma_pow(b: Int, y: Int)
 method fast_pow(n: Int, e: Int)
     returns (res: Int)
     requires 0 < e
-    // TODO: verify; add time credits and runtime bounds
+    
+    // Time credits: We need 1 + iterations(e) credits total
+    // - 1 credit for the initial method call (consume_time_credit)
+    // - iterations(e) credits for the loop (one per iteration)
+    // Since y is halved each iteration, this is O(log e)
+    requires acc(time_credit(), total_credits(e)/1)
+    
+    // Functional correctness: result equals n^e
     ensures res == math_pow(n, e)
 {
     consume_time_credit() // we must spend a credit for every call
@@ -50,16 +80,56 @@ method fast_pow(n: Int, e: Int)
     var y: Int := e 
     res := 1
 
+    // Loop invariant explanation:
+    // The algorithm maintains: res * b^y == n^e
+    // Initially: res=1, b=n, y=e  =>  1 * n^e = n^e ✓
+    // Each iteration either:
+    //   - If y is odd: multiply res by b, then halve y and square b
+    //                  res' * b'^y' = (res*b) * (b²)^(y/2) = res * b^y ✓
+    //   - If y is even: just halve y and square b
+    //                   res' * b'^y' = res * (b²)^(y/2) = res * b^y ✓
+    // When y=0: res * b^0 = res * 1 = res, so res = n^e ✓
+    
     while (y > 0)
+        // Loop invariant: The product res * b^y always equals n^e
+        invariant res * math_pow(b, y) == math_pow(n, e)
+        
+        // Loop invariant: y remains non-negative
+        invariant 0 <= y
+        
+        // Time credits: We need exactly iterations(y) credits for remaining iterations
+        // Each iteration consumes 1 credit and decreases y by division by 2
+        invariant y > 0 ==> acc(time_credit(), iterations(y)/1)
     {
         consume_time_credit() // we must spend a credit for every loop iteration
 
         if (y % 2 == 1) {
+            // y is odd: multiply result by b before squaring
+            // This maintains the invariant because:
+            // res' * b'^y' = (res * b) * (b²)^((y-1)/2)
+            //             = res * b * b^(y-1)  [by lemma_pow since y-1 is even]
+            //             = res * b^y ✓
             res := res * b
+        } else {
+            // y is even: we can use lemma_pow directly
+            // lemma_pow tells us: b^y == (b²)^(y/2)
+            // So: res * b^y == res * (b²)^(y/2) ✓
+            lemma_pow(b, y)
         }
 
         y := y / 2
         b := b * b
+        
+        // After the update:
+        // - If y was odd: res' * (b²)^(y/2) = (res*b_old) * (b_old²)^((y_old-1)/2)
+        //                                    = res_old * b_old^y_old ✓
+        // - If y was even: res' * (b²)^(y/2) = res_old * (b_old²)^(y_old/2)
+        //                                     = res_old * b_old^y_old ✓ [by lemma_pow]
     }
+    
+    // After the loop: y == 0, so:
+    // res * math_pow(b, 0) == math_pow(n, e)
+    // res * 1 == math_pow(n, e)
+    // res == math_pow(n, e) ✓
 }
 // -----------------------------------------

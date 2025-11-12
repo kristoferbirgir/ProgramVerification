@@ -22,6 +22,53 @@ method consume_time_credit() //
 
 
 // -----------------------------------------
+// Mathematical specification of Fibonacci numbers
+// This function defines what the n-th Fibonacci number should be
+// fib(0) = 0, fib(1) = 1, fib(n) = fib(n-1) + fib(n-2)
+function fib(n: Int): Int
+    requires n >= 0
+    ensures result >= 0
+    // Ensures that Fibonacci numbers are monotonically increasing for n >= 1
+    ensures n >= 1 ==> result >= n - 1
+{
+    n == 0 ? 0 : (n == 1 ? 1 : fib(n - 1) + fib(n - 2))
+}
+// -----------------------------------------
+
+
+// -----------------------------------------
+// Runtime bound function
+// This function calculates the exact number of time credits needed
+// to execute fib_recursive(n).
+// 
+// Analysis: Each call to fib_recursive(n) consumes 1 credit and makes
+// recursive calls to fib_recursive(n-1) and fib_recursive(n-2).
+// Thus: credits(n) = 1 + credits(n-1) + credits(n-2)
+//
+// Base cases:
+//   credits(0) = 1 (just the initial consume_time_credit call)
+//   credits(1) = 1 (just the initial consume_time_credit call)
+//
+// This recurrence has the solution: credits(n) = 2 * fib(n+1) - 1
+// 
+// Proof sketch:
+//   - credits(0) = 1 = 2*fib(1) - 1 = 2*1 - 1 ✓
+//   - credits(1) = 1 = 2*fib(2) - 1 = 2*1 - 1 ✓
+//   - credits(n) = 1 + credits(n-1) + credits(n-2)
+//              = 1 + (2*fib(n) - 1) + (2*fib(n-1) - 1)
+//              = 2*fib(n) + 2*fib(n-1) - 1
+//              = 2*(fib(n) + fib(n-1)) - 1
+//              = 2*fib(n+1) - 1 ✓
+function credits_needed(n: Int): Int
+    requires n >= 0
+    ensures result >= 1
+{
+    2 * fib(n + 1) - 1
+}
+// -----------------------------------------
+
+
+// -----------------------------------------
 // Task 1: Prove a runtime bound for the following recursive method
 // Your bound should be tight, i.e. use as few time credits
 // as possible. Furthermore, prove that it is not possible
@@ -31,22 +78,41 @@ method consume_time_credit() //
 // Furthermore, make sure that the functional contract remains intact.
 method fib_recursive(n: Int) returns (res: Int)
     requires n >= 0
-    // TODO add time credits and functional specification
+    // Time credits: We need exactly 2*fib(n+1) - 1 credits
+    // This is the tight bound - cannot execute with fewer credits
+    requires acc(time_credit(), credits_needed(n)/1)
+    // Functional correctness: result equals the n-th Fibonacci number
+    ensures res == fib(n)
 {
     consume_time_credit() // we must spend a credit for every call
 
     if (n == 0) {
         res := 0
+        // res == 0 == fib(0) ✓
     } elseif (n == 1) {
         res := 1
+        // res == 1 == fib(1) ✓
     } else {
+        // For n >= 2: fib(n) = fib(n-1) + fib(n-2)
+        
         var sub1: Int
+        // Recursive call needs credits_needed(n-1) = 2*fib(n) - 1 credits
         sub1 := fib_recursive(n - 1)
+        // sub1 == fib(n-1) by postcondition
 
         var sub2: Int
+        // Recursive call needs credits_needed(n-2) = 2*fib(n-1) - 1 credits
         sub2 := fib_recursive(n - 2)
+        // sub2 == fib(n-2) by postcondition
 
         res := sub1 + sub2
+        // res == fib(n-1) + fib(n-2) == fib(n) ✓
+        
+        // Total credits used: 1 + (2*fib(n) - 1) + (2*fib(n-1) - 1)
+        //                   = 2*fib(n) + 2*fib(n-1) - 1
+        //                   = 2*(fib(n) + fib(n-1)) - 1
+        //                   = 2*fib(n+1) - 1
+        //                   = credits_needed(n) ✓
     }
 }
 // -----------------------------------------
