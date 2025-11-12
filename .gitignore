@@ -10,7 +10,6 @@
 *.blg
 *.bcf
 *.run.xml
-*.pdf
 
 # macOS
 .DS_Store
