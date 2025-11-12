@@ -1,0 +1,102 @@
+// T21: Warmup: Predicates and entailment
+
+field value: Int
+field left: Ref
+field right: Ref
+
+predicate lsegl(this: Ref, last: Ref) {
+    this != last ==> acc(this.left) &&
+    lsegl(this.left, last)
+}
+
+predicate lsegr(this: Ref, last: Ref) {
+    this != last ==> acc(this.right) &&
+    lsegr(this.right, last)
+}
+
+// T21(a): Binary tree predicate
+predicate tree(this: Ref) {
+    acc(this.value) && acc(this.left) && acc(this.right) &&
+    (this.left != null ==> tree(this.left)) &&
+    (this.right != null ==> tree(this.right))
+}
+
+// T21(c): Function to get the leftmost leaf
+function left_leaf(this: Ref): Ref
+    requires tree(this)
+{
+    unfolding tree(this) in (
+        this.left == null ? this : left_leaf(this.left)
+    )
+}
+
+// T21(c): Function to get the rightmost leaf
+function right_leaf(this: Ref): Ref
+    requires tree(this)
+{
+    unfolding tree(this) in (
+        this.right == null ? this : right_leaf(this.right)
+    )
+}
+
+// T21(d): Lemma proving tree entails left and right segments
+method tree_models_lsegs(this: Ref)
+    requires tree(this)
+    ensures lsegl(this, old(left_leaf(this)))
+    ensures lsegr(this, old(right_leaf(this)))
+{
+    var ll: Ref := left_leaf(this)
+    var rl: Ref := right_leaf(this)
+    
+    unfold tree(this)
+    
+    if (this.left == null) {
+        // this is a leaf, so left_leaf(this) == this
+        fold lsegl(this, this)
+    } else {
+        // Recursively prove for left subtree
+        tree_models_lsegs(this.left)
+        // Now we have lsegl(this.left, left_leaf(this.left))
+        fold lsegl(this, ll)
+    }
+    
+    if (this.right == null) {
+        // this is a leaf, so right_leaf(this) == this
+        fold lsegr(this, this)
+    } else {
+        // Recursively prove for right subtree
+        tree_models_lsegs(this.right)
+        // Now we have lsegr(this.right, right_leaf(this.right))
+        fold lsegr(this, rl)
+    }
+}
+
+// T21(b): Client method to create a tree
+method client() {
+    var t: Ref
+    var leftChild: Ref
+    var rightChild: Ref
+    
+    // Create left leaf with value 1
+    leftChild := new(value, left, right)
+    leftChild.value := 1
+    leftChild.left := null
+    leftChild.right := null
+    fold tree(leftChild)
+    
+    // Create right leaf with value 2
+    rightChild := new(value, left, right)
+    rightChild.value := 2
+    rightChild.left := null
+    rightChild.right := null
+    fold tree(rightChild)
+    
+    // Create root with value 5
+    t := new(value, left, right)
+    t.value := 5
+    t.left := leftChild
+    t.right := rightChild
+    fold tree(t)
+    
+    assert tree(t)
+}

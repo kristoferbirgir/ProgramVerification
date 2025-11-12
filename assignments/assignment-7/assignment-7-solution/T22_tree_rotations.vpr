@@ -1,0 +1,16 @@
+// T22: Tree Rotations
+
+field value: Int
+field left: Ref
+field right: Ref
+
+// Reuse tree predicate from T21
+predicate tree(this: Ref)
+
+// TODO: Implement rotateRight method
+method rotateRight(root: Ref) returns (newRoot: Ref)
+{
+    // Implementation needed
+}
+
+// TODO: Additional methods and proofs
