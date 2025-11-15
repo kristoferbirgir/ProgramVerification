@@ -297,64 +297,37 @@ Both assertions are verified by Viper, confirming that:
 
 The frame rule is:
 $$\frac{\{p\}\ C\ \{q\}}{\{p * r\}\ C\ \{q * r\}}$$
-where no variable free in $r$ is modified by $C$.
-
+where no variable free in $r$ is modified by $C$.\\
 We prove soundness with respect to the operational semantics for each command.
 
-\textbf{Soundness:} If $(s, h) \models p * r$ and $\langle C, (s, h) \rangle \Rightarrow \langle \text{done}, (s', h') \rangle$ and $\vdash \{p\}\ C\ \{q\}$, then $(s', h') \models q * r$.
-
-\textbf{Proof for allocation ($x := \text{cons } e$):}
-
-Assume $(s, h) \models p * r$. Then there exist disjoint heaps $h_p$ and $h_r$ such that $h = h_p \cup h_r$, $(s, h_p) \models p$, and $(s, h_r) \models r$.
-
-By the allocation rule, $\{emp\}\ x := \text{cons } e\ \{x \mapsto e\}$. Since $(s, h_p) \models emp$, we have $h_p = \emptyset$.
-
-After allocation: $\langle x := \text{cons } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s[x \leftarrow l], h[l \leftarrow \llbracket e \rrbracket_s]) \rangle$ where $l \notin \text{dom}(h)$.
-
-Since $h = h_r$ (as $h_p = \emptyset$), we have $l \notin \text{dom}(h_r)$. Let $h'_p = \{l \mapsto \llbracket e \rrbracket_s\}$ and $h'_r = h_r$.
-
-Then $(s[x \leftarrow l], h'_p) \models x \mapsto e$ and $(s[x \leftarrow l], h'_r) \models r$ (since $x$ is not free in $r$ and $h'_r = h_r$).
-
-Since $\text{dom}(h'_p) \cap \text{dom}(h'_r) = \{l\} \cap \text{dom}(h_r) = \emptyset$, we have $(s[x \leftarrow l], h'_p \cup h'_r) \models x \mapsto e * r$. \qed
-
-\textbf{Proof for deallocation ($\text{dispose } e$):}
-
-Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$, and $\text{dom}(h_p) \cap \text{dom}(h_r) = \emptyset$.
-
-By the deallocation rule, $\{e \mapsto -\}\ \text{dispose } e\ \{emp\}$. So $(s, h_p) \models e \mapsto -$, meaning $h_p = \{\llbracket e \rrbracket_s\}$.
-
-After deallocation: $\langle \text{dispose } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s, h - \llbracket e \rrbracket_s) \rangle$ where $\llbracket e \rrbracket_s \in \text{dom}(h)$.
-
-Since $h_p = \{\llbracket e \rrbracket_s\}$, we have $h - \llbracket e \rrbracket_s = h_r$. Thus $(s, h_r) \models emp * r = r$. \qed
-
-\textbf{Proof for mutation ($[e] := e'$):}
-
-Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$.
-
-By the mutation rule, $\{e \mapsto -\}\ [e] := e'\ \{e \mapsto e'\}$. So $(s, h_p) \models e \mapsto -$, meaning $h_p = \{\llbracket e \rrbracket_s \mapsto v\}$ for some $v$.
-
-After mutation: $\langle [e] := e', (s, h) \rangle \Rightarrow \langle \text{done}, (s, h[\llbracket e \rrbracket_s \leftarrow \llbracket e' \rrbracket_s]) \rangle$.
-
-Let $h'_p = \{\llbracket e \rrbracket_s \mapsto \llbracket e' \rrbracket_s\}$ and $h'_r = h_r$. Then $(s, h'_p) \models e \mapsto e'$ and $(s, h'_r) \models r$.
-
-Since $\llbracket e \rrbracket_s \in \text{dom}(h_p)$ and $\text{dom}(h_p) \cap \text{dom}(h_r) = \emptyset$, we have $\llbracket e \rrbracket_s \notin \text{dom}(h_r)$, so $h'_p$ and $h'_r$ are still disjoint.
-
-Therefore $(s, h'_p \cup h'_r) \models e \mapsto e' * r$. \qed
-
-\textbf{Proof for lookup ($x := [e]$):}
-
-Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$.
-
-By the lookup rule, $\{e \mapsto v\}\ x := [e]\ \{\exists x'. e[x := x'] \mapsto v \land x = v\}$. So $(s, h_p) \models e \mapsto v$, meaning $h_p = \{\llbracket e \rrbracket_s \mapsto v\}$.
-
+\textbf{Soundness:} If $(s, h) \models p * r$ and $\langle C, (s, h) \rangle \Rightarrow \langle \text{done}, (s', h') \rangle$ and $\vdash \{p\}\ C\ \{q\}$, then $(s', h') \models q * r$.\\ \\ \\
+\textbf{Proof for allocation ($x := \text{cons } e$):}\\
+Assume $(s, h) \models p * r$. Then there exist disjoint heaps $h_p$ and $h_r$ such that $h = h_p \cup h_r$, $(s, h_p) \models p$, and $(s, h_r) \models r$.\\
+By the allocation rule, $\{emp\}\ x := \text{cons } e\ \{x \mapsto e\}$. Since $(s, h_p) \models emp$, we have $h_p = \emptyset$.\\
+After allocation: $\langle x := \text{cons } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s[x \leftarrow l], h[l \leftarrow \llbracket e \rrbracket_s]) \rangle$ where $l \notin \text{dom}(h)$.\\
+Since $h = h_r$ (as $h_p = \emptyset$), we have $l \notin \text{dom}(h_r)$. Let $h'_p = \{l \mapsto \llbracket e \rrbracket_s\}$ and $h'_r = h_r$.\\
+Then $(s[x \leftarrow l], h'_p) \models x \mapsto e$ and $(s[x \leftarrow l], h'_r) \models r$ (since $x$ is not free in $r$ and $h'_r = h_r$).\\
+Since $\text{dom}(h'_p) \cap \text{dom}(h'_r) = \{l\} \cap \text{dom}(h_r) = \emptyset$, we have $(s[x \leftarrow l], h'_p \cup h'_r) \models x \mapsto e * r$. \qed\\\\
+\textbf{Proof for deallocation ($\text{dispose } e$):}\\
+Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$, and $\text{dom}(h_p) \cap \text{dom}(h_r) = \emptyset$.\\
+By the deallocation rule, $\{e \mapsto -\}\ \text{dispose } e\ \{emp\}$. So $(s, h_p) \models e \mapsto -$, meaning $h_p = \{\llbracket e \rrbracket_s\}$.\\
+After deallocation: $\langle \text{dispose } e, (s, h) \rangle \Rightarrow \langle \text{done}, (s, h - \llbracket e \rrbracket_s) \rangle$ where $\llbracket e \rrbracket_s \in \text{dom}(h)$.\\
+Since $h_p = \{\llbracket e \rrbracket_s\}$, we have $h - \llbracket e \rrbracket_s = h_r$. Thus $(s, h_r) \models emp * r = r$. \qed\\\\
+\textbf{Proof for mutation ($[e] := e'$):}\\
+Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$.\\
+By the mutation rule, $\{e \mapsto -\}\ [e] := e'\ \{e \mapsto e'\}$. So $(s, h_p) \models e \mapsto -$, meaning $h_p = \{\llbracket e \rrbracket_s \mapsto v\}$ for some $v$.\\
+After mutation: $\langle [e] := e', (s, h) \rangle \Rightarrow \langle \text{done}, (s, h[\llbracket e \rrbracket_s \leftarrow \llbracket e' \rrbracket_s]) \rangle$.\\
+Let $h'_p = \{\llbracket e \rrbracket_s \mapsto \llbracket e' \rrbracket_s\}$ and $h'_r = h_r$. Then $(s, h'_p) \models e \mapsto e'$ and $(s, h'_r) \models r$.\\
+Since $\llbracket e \rrbracket_s \in \text{dom}(h_p)$ and $\text{dom}(h_p) \cap \text{dom}(h_r) = \emptyset$, we have $\llbracket e \rrbracket_s \notin \text{dom}(h_r)$, so $h'_p$ and $h'_r$ are still disjoint.\\
+Therefore $(s, h'_p \cup h'_r) \models e \mapsto e' * r$. \qed\\\\
+\textbf{Proof for lookup ($x := [e]$):}\\
+Assume $(s, h) \models p * r$ with $h = h_p \cup h_r$, $(s, h_p) \models p$, $(s, h_r) \models r$.\\
+By the lookup rule, $\{e \mapsto v\}\ x := [e]\ \{\exists x'. e[x := x'] \mapsto v \land x = v\}$. So $(s, h_p) \models e \mapsto v$, meaning $h_p = \{\llbracket e \rrbracket_s \mapsto v\}$.\\
 After lookup: $\langle x := [e], (s, h) \rangle \Rightarrow$\\
 $\langle \text{done}, (s[x \leftarrow h(\llbracket e \rrbracket_s)], h) \rangle$\\
-$= \langle \text{done}, (s[x \leftarrow v], h) \rangle$.
-
-Since $x$ is not free in $r$ (frame rule condition) and the heap is unchanged, $(s[x \leftarrow v], h_r) \models r$.
-
-Also $(s[x \leftarrow v], h_p) \models \exists x'. e[x := x'] \mapsto v \land x = v$ (taking $x' = s(x)$).
-
+$= \langle \text{done}, (s[x \leftarrow v], h) \rangle$.\\
+Since $x$ is not free in $r$ (frame rule condition) and the heap is unchanged, $(s[x \leftarrow v], h_r) \models r$.\\
+Also $(s[x \leftarrow v], h_p) \models \exists x'. e[x := x'] \mapsto v \land x = v$ (taking $x' = s(x)$).\\
 Therefore $(s[x \leftarrow v], h) \models (\exists x'. e[x := x'] \mapsto v \land x = v) * r$. \qed
 
 \subsection{(b) \texorpdfstring{Prove or disprove: $\{\{x \mapsto 0 \land y \mapsto 0\}\}\ [x] := 5\ \{\{x \mapsto 5 \land y \mapsto 0\}\}$}{Prove or disprove triple (b)}}
